@@ -65,7 +65,6 @@ Inventory / Risk
 Dataset Generation & Research
 ```
 
-Supports:
 The same stack supports:
 - live capital deployment
 - paper trading
