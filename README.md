@@ -1,7 +1,18 @@
 # Market-Making-Trading-System
-Research framework for market making as a coupled system of alpha, execution, inventory, and regime-dependent liquidity provision.
+Production-oriented market-making engine for systematic liquidity provision under real microstructure, execution, inventory, and latency constraints.
 
-Built for live L2 market data, deterministic replay, and execution-aware signal evaluation.
+The system combines:
+- live L2 market data
+- deterministic historical replay
+- regime-dependent alpha
+- structural fair-value estimation
+- residual alpha
+- toxicity / adverse-selection modeling
+- queue-aware execution simulation
+- inventory-aware quoting
+- exchange execution and reconciliation
+
+The system has progressed from historical research and simulation to live capital deployment, allowing execution assumptions, fill models, latency, queue dynamics, and signal behavior to be evaluated against real exchange executions.
 
 ## Core Insight
 Market making is not a forecasting problem.
@@ -13,7 +24,11 @@ It is a conditional execution problem under microstructure constraints:
 - execution determines whether edge is realized
 - fees + queue dynamics determine whether edge survives
 
-Most theoretical edge is lost through execution and adverse selection, not prediction error.
+The key design principle is therefore:
+```
+Selective participation under realistic execution constraints is more important than maximizing predictive accuracy.
+```
+The system explicitly couples signal generation with execution, rather than evaluating alpha independently from the mechanism through which it is monetized.
 
 ## System Overview
 ```
@@ -30,12 +45,12 @@ Regime Detection (GMM clustering)
         │
         ▼
 Alpha Stack
- ├─ Microstructure Alpha (fast signal)
- ├─ Structural Alpha (slow microstructure)
- └─ ML Residual Alpha (XGBoost correction)
+ ├─ Microstructure Alpha
+ ├─ Structural Alpha
+ └─ Residual Alpha (XGBoost)
         │
         ▼
-Toxicity Model (expected markout)
+Toxicity Model (expected markout - XGBoost)
         │
         ▼
 Quote / Skew / Size Decision
@@ -51,9 +66,11 @@ Dataset Generation & Research
 ```
 
 Supports:
-- live trading
+The same stack supports:
+- live capital deployment
 - paper trading
-- full historical replay
+- exchange testnet execution
+- historical replay
 
 ## Market Discovery
 Market discovery identifies markets where market making has sufficient structural edge to justify quoting.
@@ -95,47 +112,73 @@ Net Spread
 The resulting candidates are passed into the trading stack.
 
 #### Market discovery therefore answers:
+```
 Where should we trade?
-
+```
 #### While the downstream models determine:
+```
 When should we quote, which side should we favor, and how much should we trade?
-
+```
 This separation prevents high displayed spreads from being mistaken for genuine trading opportunities and focuses capital on markets where the realized spread has the highest probability of surviving fees, adverse selection, queue dynamics, and execution latency.
 
 ## Regime Model
 Unsupervised Gaussian Mixture Model (GMM) using:
-- volatility
 - spread
+- volatility
 - order imbalance
 - trade imbalance
-- quote churn
-- inventory
-- inventory volatility
-- microprice error
+- microprice deviation (microprice - mid)
 
-Results:
-- discrete market regimes with materially different alpha expression.
+The regime layer is used primarily as a conditional gate on alpha and liquidity provision, rather than as an independent source of predictive edge.
 
-Key observations:
-- regimes gate alpha effectiveness rather than generate edge.
+Different regimes exhibit materially different:
+- alpha decay
+- spread behavior
+- adverse-selection risk
+- fill dynamics
+- inventory risk
+
+This allows the execution policy to become more selective when the liquidity environment becomes fragile.
 
 ## Alpha Stack
 ### 1. Microprice Alpha
-Top-of-book imbalance signal.
-- strongest at 100 - 500ms horizons
-- captures immediate order book pressure
-- fast-decaying but directionally informative
+The fastest alpha component is based on the displacement between microprice and the mid:
+```
+micro_signal_t = (microprice_t - mid_t) / mid_t
+```
+where microprice incorporates top-of-book price and liquidity imbalance.
+
+The signal is evaluated against future mid returns:
+```
+y_h = (mid_{t+h} - mid_t) / mid_t
+```
+This deliberately evaluates the raw microstructure signal against future price movement before structural delta is incorporated into the quoting policy.
+
+#### Current out-of-sample diagnostics:
+The main observation is that microprice deviation contains predictive information beyond the immediate quote horizon.
+
+Rather than exhibiting purely rapid decay, the current results show increasing predictive strength through the 5-second horizon:
+```
+100ms → IC 0.129
+500ms → IC 0.200
+1s    → IC 0.273
+5s    → IC 0.416
+```
+This suggests that the top-of-book state is capturing information about subsequent order-flow and price evolution that persists beyond the immediate matching interval.
 
 ### 2. Structural Alpha
 Slower microstructure signal:
 - volatility
-- order/trade imbalance
-- inventory pressure
+- order imbalance
+- trade imbalance
 - microprice deviation
+- inventory pressure
 
-More stable estimate of short-horizon fair value than microprice alone.
+This makes structural alpha a policy-controlled adjustment to the quoting center rather than an unconstrained directional forecast.
 
-### 3. Residual ML (XGBoost)
+The coefficient alpha_struct controls how aggressively the execution policy incorporates structural fair value into the final reservation price.
+
+### 3. Residual Alpha (XGBoost)
 Learns residual drift after structured fair value:
 ```
 log(mid_{t+h} / fair_value_t)
@@ -147,34 +190,45 @@ Behavior:
 - acts as correction layer, not primary alpha
 
 ## Toxicity Model (Execution Risk)
-Predicts expected markout conditional on execution:
+Predicts expected signed markout conditional on execution:
 ```
-T(x) = E[future markout_h ∣ fill, state]
+T(x) = E[future signed markout_h ∣ fill, state]
 ```
 
 Inputs:
-- imbalance
 - spread
 - volatility
+- order imbalance
+- trade imbalance
 - microprice deviation
-- inventory pressure
-- queue position
+- regime
 
 Outputs:
 - negative → toxic liquidity
 - positive → favorable execution
 
-Role:
-- execution gating / participation filter
-- used for skewing and size adjustment
+The model is used to:
+- gate participation
+- skew quotes
+- adjust order size
+- reduce exposure during adverse-selection conditions
 
-Results:
-- strong short-horizon predictability of adverse selection
-- improves execution quality more than standalone PnL
+A central design constraint is avoiding over-filtering.
+
+A liquidity filter that removes every potentially adverse fill can improve markout statistics while simultaneously destroying the economics of market making through reduced participation.
+
+The objective is therefore not:
+```
+maximize fill quality
+```
+but:
+```
+maximize expected execution value conditional on the cost of not participating.
+```
 
 ## Execution Model
-### 1. Fill Model
-Deterministic fill model driven by:
+### 1. Queue / Fill Model
+Passive fills are modeled using explicit queue-ahead dynamics.
 - trade-driven depletion (explicitly modeled)
 - depth-driven depletion (cancellations, additions, quote churn estimation, hawkes)
 - hawkes excitation
@@ -189,139 +243,254 @@ P(fill) = 1 − exp(−(λ_t / Q_t) ⋅ Δ_t)
 ```
 
 Key correction:
-- queue reduction is not equivalent to executed volume
+```
+queue reduction is not equivalent to executed volume
+```
 
 ### 2. Cost Model
 ```
 PnL = spread capture + alpha − fees − adverse selection − slippage
 ```
 
-Key implications:
-- fees + turnover materially impact viability
-- small execution inefficiencies dominate marginal signal gains
+This decomposition allows the strategy to determine whether improvements are coming from:
+- better pricing
+- better directional selection
+- better fill selection
+- better inventory management
+- better execution
+
+rather than simply observing aggregate PnL.
 
 ### 3. Latency Model
-Execution timing significantly affects realized outcomes.
+Execution timing might affect realized outcomes.
 
 Future work:
 - order placement latency
 - cancellation latency
 - exchange acknowledgement delays
 
-## Inventory Model
+## Inventory / Risk
 Inventory treated as a continuous risk state.
 
 Reservation price adjusts based on:
 - inventory level
 - volatility
 - regime
+- toxicity
 
 Objective:
 - balance spread capture vs directional exposure under changing conditions.
 
+## Live Execution
+The system has progressed from simulation and Testnet execution to live capital deployment.
+
+The live execution stack currently includes:
+#### Broker Layer
+- REST order placement/cancel with HMAC authentication
+- user data stream (listenKey) for order lifecycle tracking
+- position reconciliation
+- session keepalive and recovery handling
+
+#### Execution Engine
+- inventory- and volatility-adjusted asymmetric quoting
+- toxicity-aware participation and sizing
+- queue-aware cancel/replace logic
+- real-time trade-flow ingestion for state updates
+
+#### User Stream
+- handles WebSocket NEW / TRADE / CANCELED / REJECTED trades
+- maintains queue position estimates at entry
+- synchronizes internal execution state with exchange events
+
+## Live Execution Results
+Initial live deployment is being used primarily as execution validation, rather than as a claim of statistically significant strategy performance.
+
+Current fills provide direct measurements of the difference between the simulated execution environment and the real exchange.
+
+Observed live characteristics include:
+
+### 1. Maker vs Taker Execution
+The live execution log explicitly records whether a fill was passive or aggressive.
+
+This enables separate attribution of:
+- maker spread capture
+- taker execution
+- adverse selection
+- fees
+- inventory effects
+
+The distinction is important because a theoretically attractive market-making signal can become uneconomic if execution logic repeatedly crosses the spread to manage inventory.
+
+### 2. Live Markout Analysis
+Each live fill is now evaluated against future market movement using signed markouts:
+```
+100ms
+500ms
+1s
+5s
+```
+The live dataset records:
+- signed markout
+- signed adverse selection
+- signal at decision time
+- quote churn
+- snapshot age
+- execution latency
+- time to fill
+- side
+- price
+- quantity
+- maker/taker status
+
+This allows the system to connect:
+```
+  State at Quote
+        ↓
+    Decision
+        ↓
+  Queue / Latency
+        ↓
+       Fill
+        ↓
+Future Price Path
+```
+rather than evaluating fills only through realized PnL.
+
+The current live sample is still too small to make strong statistical claims about profitability. Its primary value is establishing the instrumentation required to measure whether the simulated execution assumptions survive contact with the exchange.
+
+## Live Validation Loop
+The live system is designed as a closed feedback loop:
+```
+Historical Research
+         ↓
+    Simulation
+         ↓
+   Paper / Testnet
+         ↓
+  Live Execution
+         ↓
+Execution Diagnostics
+         ↓
+Model Calibration
+         ↓
+    Simulation
+         ↓
+  Live Deployment
+```
+
+The most important parameters being validated live are:
+- latency distribution
+- snapshot staleness
+- queue-ahead estimates
+- trade-driven depletion
+- cancellation-driven depletion
+- fill probability
+- toxicity / markout predictions
+- regime classification
+- inventory response
+
+This allows the live system to improve the execution model using observed exchange behavior rather than relying entirely on historical assumptions.
+
 ## Key Results
-#### 1. Alpha hierarchy is stable
-- structural alpha > microprice > residual ML (short horizon)
+### 1. Alpha is horizon-dependent
+The current micro signal alpha exhibits increasing predictive information with horizon:
 
-#### 2. Regimes improve selection, not edge
-- reduce drawdowns
-- improve consistency
-- do not independently generate alpha
+Micro Signal IC:
+```
+100ms   0.129
+500ms   0.200
+1s      0.273
+5s      0.416
+```
+This suggests that the micro signal is better suited to medium short-horizon fair-value correction than to ultra-fast quote decisions.
 
-#### 3. Toxicity is execution-side signal
-- strong markout predictability
-- improves fill quality
-- can reduce PnL if overused (over-filtering)
+### 2. Regimes improve conditional participation
+Regimes are used to determine when existing signals should be trusted and when liquidity provision should be reduced.
 
-#### 4. Execution dominates marginal alpha gains
-- queue dynamics + cancellations + fees significantly alter outcomes
-- naive alpha materially degrades under realistic execution
+They are not treated as an independent alpha source.
+
+### 3. Toxicity is an execution signal
+The objective of toxicity modeling is not simply to predict future price movement.
+
+It is to answer:
+```
+If I get filled here, was I providing liquidity to informed flow?
+```
+This makes markout conditional on execution substantially more relevant than unconditional return prediction.
+
+### 4. Execution dominates marginal signal improvements
+Live deployment is reinforcing the importance of:
+- queue position
+- latency
+- snapshot age
+- cancellation dynamics
+- order arrival timing
+- fill selection
+
+A small improvement in predictive accuracy can be economically irrelevant if the corresponding quote arrives too late or joins an unfavorable queue.
 
 ## Edge Decomposition
-Market making performance decomposes into:
-- alpha: where edge exists
-- regime: when edge is valid
-- toxicity: whether to participate
-- execution: whether edge is realized
-- fees: whether edge survives
-- latency: how fast edge is captured
+The system decomposes market-making performance into:
+```
+Alpha
+    → where edge exists
+
+Regime
+    → when the edge is reliable
+
+Toxicity
+    → whether providing liquidity is attractive
+
+Reservation Price
+    → how the edge is incorporated into quotes
+
+Queue
+    → probability of actually getting filled
+
+Latency
+    → whether the quote is still relevant when it arrives
+
+Execution
+    → whether theoretical edge becomes realized edge
+
+Fees
+    → whether realized edge survives costs
+
+Inventory
+    → whether repeated fills create unacceptable directional risk
+```
+This decomposition is central to the architecture.
 
 ## Core Takeaway
-Performance is driven primarily by selective participation under realistic microstructure constraints, not predictive accuracy alone.
+The system's main optimization problem is not:
+```
+predict the next price better.
+```
+It is:
+```
+decide when the expected value of providing liquidity exceeds the combined cost of adverse selection, queue risk, latency, fees, and inventory exposure.
+```
 
-The dominant improvement lever is not stronger signals, but tighter coupling between:
-- signal generation
-- execution modeling
-- adverse selection filtering
-- regime-aware participation
+Live deployment makes this distinction explicit.
 
-## Live Execution (Binance Futures Testnet)
-The platform includes a full live execution layer on Binance Futures Testnet, closing the loop from signal generation → quoting → execution → fills → PnL, and validating microstructure assumptions against real exchange behavior.
+The research stack identifies potential edge.
 
-### Execution Stack
-- Broker Layer (BinanceBroker)
-  - REST order placement/cancel with HMAC authentication
-  - user data stream (listenKey) for order lifecycle tracking
-  - position reconciliation via positionRisk
-  - session keepalive and recovery handling
-- Execution Engine (LiveExecution)
-  - inventory- and volatility-adjusted asymmetric quoting
-  - toxicity-aware participation and sizing
-  - queue-aware cancel/replace logic
-  - real-time trade-flow ingestion for state updates
-- User Stream Handler (BinanceUserStream)
-  - WebSocket ORDER_TRADE_UPDATE processing
-  - handles NEW / TRADE / CANCELED / REJECTED states
-  - maintains queue position estimates at entry
-  - synchronizes internal execution state with exchange events
-
-## Key Live Findings
-####  1. Latency is structural (~600-700ms end-to-end)
-- signal → execution exhibits ~600-700ms latency dominated by REST gateway, network RTT, and WebSocket propagation.
-- latency is a first-order state variable; it must be explicitly modeled in fill probability and queue dynamics.
-
-####  2. Market data is asynchronous (~150-300ms bursty updates)
-- order book updates arrive in event-driven bursts rather than fixed intervals due to batched WebSocket delivery.
-- L2 data is intrinsically irregular; fixed-timestep assumptions distort microstructure inference.
-
-####  3. Execution dominates signal quality
-- queue position, cancellation timing, and latency differentials materially affect realized outcomes.
-- most theoretical alpha is reshaped by execution mechanics rather than prediction error.
-
-####  4. Alpha-execution decomposition holds in practice
-- alpha identifies directional bias, toxicity captures adverse selection risk, and execution determines realized PnL.
-- short-horizon variance is dominated by execution noise rather than signal quality.
-
-####  5. Queue state is first-class signal
-- queue position, cancellation dynamics, and trade-driven depletion are primary drivers of fill probability.
-- validates explicit modeling of queue-ahead, cancellation resets, and trade-flow-based depletion.
-
-## Updated Core Takeaway (Reinforced)
-Market making is not constrained by predictive signal quality.
-
-It is constrained by:
-- latency uncertainty
-- queue position randomness
-- execution path dependence
-- regime-dependent liquidity fragility
-
-In live conditions, execution dynamics dominate alpha, and the primary optimization problem becomes:
-- selective participation under microstructure and latency constraints, not prediction.
+The execution stack determines whether that edge can actually be monetized.
 
 ## Future Directions
-- Exchange-specific latency and acknowledgement modeling. (in-progress)
+- Exchange-specific latency and acknowledgement modeling.
 - Hawkes-process based order-flow forecasting. (completed)
-- C++ execution engine for low-latency simulation. (in-progress)
-- Live paper-trading and liquidity-provision deployment. (completed)
+- C++ engine for low-latency execution. (completed)
+- Paper-trading and Testnet liquidity-provision deployment. (completed)
 - Live validation for:
   - fill probability estimates
   - toxicity predictions
   - regime classifications
 
-against real Binance executions under small-capital deployment.
+against real Binance executions under small-capital deployment. (in-progress)
 
 ## Example Output
-Below are sample outputs illustrating the engine decision mechanics.
+Below are sample outputs illustrating the engine execution mechanics.
 
 ### Trading Terminal Dashboard with L2 Market Data and Strategy Parameters
 <img width="700" height="1300" alt="React Trading Terminal" src="https://github.com/Briansim74/Market-Making-Research-Platform/blob/main/react.png"/>
