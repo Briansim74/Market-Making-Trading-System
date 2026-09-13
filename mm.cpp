@@ -68,6 +68,7 @@
 #include "mm_recorder.hpp" //dataset recorder
 #include "mm_strategy.hpp" //models & strategy
 #include "mm_execution.hpp" //execution
+#include "mm_broker_stream.hpp" // broker & user stream
 #include "mm_clock.hpp" //clock
 
 using std::cout;
@@ -222,8 +223,8 @@ public:
         state.compute_order_imbalance();
         state.update_market_feature_state();
         state.update_residual_realization();
+        state.update_toxicity_realization(); // NEW
         state.update_performance();
-        // state.update_toxicity_realization();
 
         // -----------------------------
         // STRATEGY ONLY AFTER INIT
@@ -277,8 +278,8 @@ public:
         state.compute_order_imbalance();
         state.update_market_feature_state();
         state.update_residual_realization();
+        state.update_toxicity_realization(); // NEW
         state.update_performance();
-        // state.update_toxicity_realization();
 
         // -----------------------------
         // STRATEGY ONLY AFTER INIT
@@ -332,8 +333,8 @@ public:
         state.compute_order_imbalance();
         state.update_market_feature_state();
         state.update_residual_realization();
+        state.update_toxicity_realization(); // NEW
         state.update_performance();
-        // state.update_toxicity_realization();
 
         // -----------------------------
         // STRATEGY ONLY AFTER INIT
@@ -387,8 +388,8 @@ public:
         state.compute_order_imbalance();
         state.update_market_feature_state();
         state.update_residual_realization();
+        state.update_toxicity_realization(); // NEW
         state.update_performance();
-        // state.update_toxicity_realization();
 
         // -----------------------------
         // STRATEGY ONLY AFTER INIT
@@ -440,11 +441,16 @@ public:
             waiting_for_flatten = true;
 
             execution.place_market();
+            cout << "wait_for_cancel done\n";
         }
     }
 
     void wait_for_flatten(){
-        if(waiting_for_flatten && abs(state.inventory) <= 1e-9){
+        // if(waiting_for_flatten && abs(state.inventory) <= 1e-9){
+        // Already within [-10, +10] USDT
+        if(waiting_for_flatten && abs(state.inventory * state.market_book.mid()) <= config.target_notional){
+
+            cout << "abs(state.inventory * state.market_book.mid(): " << abs(state.inventory * state.market_book.mid()) << "\n";
             waiting_for_flatten = false;
 
             Snapshot snap = build_snapshot();
@@ -538,10 +544,11 @@ public:
         snap.signals.alpha_residual = state.last_signal ? state.last_signal->alpha_residual : 0.0;
         snap.signals.spread_multiplier = state.last_signal ? state.last_signal->spread_multiplier : 0.0;
         snap.signals.inventory_target = state.last_signal ? state.last_signal->inventory_target : 0.0;
-        snap.signals.residual_signal_quality = state.last_signal ? state.last_signal->residual_signal_quality : 0.0;
         snap.signals.tox = state.last_signal ? state.last_signal->toxicity.tox : 0.0;
         snap.signals.k_spread = state.last_signal ? state.last_signal->toxicity.k_spread : 0.0;
         snap.signals.k_order_size = state.last_signal ? state.last_signal->toxicity.k_order_size : 0.0;
+        snap.signals.residual_signal_quality = state.last_signal ? state.last_signal->residual_signal_quality : 0.0;
+        snap.signals.toxicity_signal_quality = state.last_signal ? state.last_signal->toxicity_signal_quality : 0.0;
         
         snap.quotes.my_spread = state.last_signal ? state.last_signal->my_spread : 0.0;
         snap.quotes.my_bid = execution.get_last_bid();
@@ -831,9 +838,9 @@ int main(){
 
     if(!f.is_open()){
         f.open(path2);
-        cout << path2 << "\n";
+        // cout << path2 << "\n";
     }
-    else cout << path1 << "\n";
+    // else cout << path1 << "\n";
 
     if(!f.is_open()){
         cerr << "Cannot open manifest\n";
@@ -847,6 +854,5 @@ int main(){
 
     system.start();
     system.wait_for_shutdown();
-
     return 0;
 }

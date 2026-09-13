@@ -1,0 +1,14 @@
+{
+    "model_name": "residual_model_pepe",
+    "target": "log(future_mid/(mid + struct_delta + micro_signal_delta))",
+    "model_file": "data/residual_model_pepe_xgb.json",
+    "horizon_ms": 1000,
+    "feature_cols": [
+        "spread",
+        "volatility",
+        "order_imbalance",
+        "trade_imbalance",
+        "microprice_dev"
+    ],
+    "feature_dim": 5
+}

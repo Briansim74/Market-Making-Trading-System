@@ -1,0 +1,48 @@
+{
+  "run_id": 0,
+  "exchange": "binance",
+  "mode": "replay",
+  "market": "spot",
+  "models": {
+    "struct_model": "blended_AS",
+    "regime_model": "regime_model_5",
+    "micro_signal_model": "micro_signal_model_4",
+    "residual_model": "residual_model_4",
+    "toxicity_model": "toxicity_model_2"
+  },
+  "instrument": "btcusdt",
+  "exchange_latency": 0,
+  "gamma": 0.1,
+  "base_size": 0.2,
+  "max_inv": 1.0,
+  "initial_cash": 100000.0,
+  "fees": {
+    "maker_fee_rate": 0.0002,
+    "taker_fee_rate": 0.0002
+  },
+  "folder_path": "data/runs/run_20260723_135836",
+  "server_config": {
+    "host": "0.0.0.0",
+    "port": 8000
+  },
+  "performance": {
+    "pnl": 0.0,
+    "sharpe": 0.0,
+    "annualized_sharpe": 0.0,
+    "sortino": 0.0,
+    "annualized_sortino": 0.0,
+    "fees_paid": 0.0,
+    "fees_per_fill": 0.0,
+    "pnl_per_fill": 0.0
+  },
+  "api": {
+    "api_key": "",
+    "api_secret": "",
+    "hostname_spot": "stream.binance.com",
+    "hostname_futures": "stream.binancefuture.com",
+    "base_url_spot": "api.binance.com",
+    "base_url_futures": "testnet.binancefuture.com",
+    "endpoint_spot": "/api/v3",
+    "endpoint_futures": "/fapi/v1"
+  }
+}

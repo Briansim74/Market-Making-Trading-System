@@ -124,7 +124,7 @@ export default function Dashboard() {
 
           <Row
             label="Confidence"
-            value={re.confidence.toFixed(2)}
+            value={re.confidence.toFixed(3)}
           />
 
           {/* SIGNALS */}
@@ -166,13 +166,18 @@ export default function Dashboard() {
           />
 
           <Row
+            label="Toxicity"
+            value={s.tox.toFixed(10)}
+          />
+
+          <Row
             label="Residual Signal Quality"
             value={s.residual_signal_quality.toFixed(2)}
           />
 
           <Row
-            label="Toxicity"
-            value={s.tox.toFixed(2)}
+            label="Toxicity Signal Quality"
+            value={s.toxicity_signal_quality.toFixed(10)}
           />
 
           <Row
@@ -418,7 +423,7 @@ function InventoryRisk({ inventory, limit = 10 }) {
       }}
     >
       {prefix}
-      {inventory.toFixed(4)}
+      {inventory.toFixed(10)}
     </span>
   );
 }

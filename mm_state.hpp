@@ -62,7 +62,6 @@
 
 #include "mm_structs.hpp" //structs
 #include "mm_config_orderbook.hpp" //market config & orderbook
-#include "mm_markprice.hpp" //mark price
 
 using std::cout;
 using json = nlohmann::json;
@@ -97,7 +96,7 @@ public:
     double ewma_var = 0.0;
 
     double cash;
-    double inventory = 0.0;
+    double inventory = 1.0;
     double realized_pnl = 0.0;
     double avg_entry_price = 0.0;
     double mark_price = 0.0;
@@ -129,6 +128,7 @@ public:
     State(MarketConfig& config) : config(config), market_book(config)
     {
         cash = config.initial_cash;
+        inventory = config.initial_position;
     }
 
     double get_vol(){
@@ -236,9 +236,8 @@ public:
         push_limited(mfs.spread, spread);
         push_limited(mfs.order_imbalance, order_imbalance);
         push_limited(mfs.trade_imbalance, trade_imbalance);
+        push_limited(mfs.microprice_dev, microprice - mid);
         push_limited(mfs.quote_churn, quote_churn);
-        push_limited(mfs.inventory, inventory);
-        push_limited(mfs.microprice_error, mid - microprice);
     }
 
     void update_residual_realization(){
@@ -250,23 +249,23 @@ public:
             mfs.residual_predictions.pop_front();
             
             entry.realized = log(last_mid / entry.reservation);
-            push_limited(mfs.residual_signal_log, entry, 2000); //2000 in queue, 200s window
+            push_limited(mfs.residual_signal_log, entry, 2000); //2000 in queue
         }
     }
 
-    // void update_toxicity_realization(){
-    //     int64_t now = max(last_depth_ts, last_trade_ts);
+    void update_toxicity_realization(){
+        int64_t now = max(last_depth_ts, last_trade_ts);
 
-    //     while(!mfs.toxicity_predictions.empty() && 
-    //     now - mfs.toxicity_predictions.front().ts >= mfs.toxicity_predictions.front().horizon_ms){
+        while(!mfs.toxicity_predictions.empty() && 
+        now - mfs.toxicity_predictions.front().ts >= mfs.toxicity_predictions.front().horizon_ms){
             
-    //         auto& entry = mfs.toxicity_predictions.front();
-    //         mfs.toxicity_predictions.pop_front();           
+            auto& entry = mfs.toxicity_predictions.front();
+            mfs.toxicity_predictions.pop_front();           
             
-    //         entry.realized = p.fill_sign * (last_mid - entry.fill_price);
-    //         push_limited(mfs.toxicity_signal_log, entry, 2000); //2000 in queue, 200s window
-    //     }
-    // }
+            entry.realized = entry.fill_sign * (last_mid - entry.fill_price);
+            push_limited(mfs.toxicity_signal_log, entry, 2000); //2000 in queue
+        }
+    }
 
     void update_performance(){
         auto [bid_tick, bid_size] = market_book.best_bid();
@@ -342,28 +341,12 @@ public:
         regime.order_imbalance = mean(mfs.order_imbalance);
         regime.trade_imbalance = mean(mfs.trade_imbalance);
         regime.quote_churn = mean(mfs.quote_churn);
-        regime.inventory = mean(mfs.inventory);
-        regime.inventory_vol = stddev(mfs.inventory);
-        regime.microprice_error = mean(mfs.microprice_error);
+        regime.microprice_dev = mean(mfs.microprice_dev);
 
         return regime;
     }
 
     void on_fill(const double& price, double fill_qty, const std_string& side, const bool& is_maker){
-
-        // if (toxicity_model) {
-            //     ToxicityPrediction p;
-
-            //     p.ts = state.last_depth_ts;   // or ts, but be consistent with your system clock
-            //     p.horizon_ms = toxicity_model->horizon_ms;
-
-            //     p.pred = order.last_signal.cached_toxicity_pred;  // IMPORTANT: computed at quote time
-            //     p.fill_price = fill_price;
-
-            //     p.fill_sign = (side == "BUY") ? 1 : -1;
-
-            //     state.market_feature_state.toxicity_predictions.push_back(std::move(p));
-            // }
 
         double old_inv = inventory;
         double old_avg = avg_entry_price;
@@ -426,8 +409,6 @@ public:
     }
 
     double get_unrealized_pnl(double mid){
-        // return inventory * (mark_price - avg_entry_price); to align with binance stream unrealized_pnl
-
         return inventory * (mid - avg_entry_price);
     }
 
@@ -500,9 +481,9 @@ public:
         }
 
         cout << "SHARPE: " << performance.sharpe
-            << " Annualized SHARPE: " << performance.annualized_sharpe
-            << " SORTINO: " << performance.sortino
-            << " Annualized SORTINO: " << performance.annualized_sortino << "\n";
+            << ", Annualized SHARPE: " << performance.annualized_sharpe
+            << ", SORTINO: " << performance.sortino
+            << ", Annualized SORTINO: " << performance.annualized_sortino << "\n";
 
         return performance;
     }

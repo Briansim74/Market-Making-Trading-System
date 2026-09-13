@@ -102,9 +102,12 @@ public:
 
     int64_t exchange_latency;
     double gamma;
+    double initial_position;
+    double base_spread;
     double base_size;
     double max_inv;
 
+    double target_notional;
     double initial_cash;
     double maker_fee_rate;
     double taker_fee_rate;
@@ -159,8 +162,11 @@ public:
 
         exchange_latency = params["exchange_latency"].get<int64_t>();
         gamma = params["gamma"].get<double>();
+        initial_position = params["initial_position"].get<double>();
+        base_spread = params["base_spread"].get<double>();
         base_size = params["base_size"].get<double>();
         max_inv = params["max_inv"].get<double>();
+        target_notional = params["target_notional"].get<double>();
         initial_cash = params["initial_cash"].get<double>();
 
         folder_path = params["folder_path"].get<std_string>();
@@ -179,51 +185,90 @@ public:
         base_url = params["api"]["base_url_" + market].get<std_string>();
         endpoint = params["api"]["endpoint_" + market].get<std_string>();
 
-        cout << "exchange: " << exchange + "_" + market << ", mode: " << mode << ", instrument: " << instrument << ", instrument_upper: " << instrument_upper << "\n";
-        cout << "exchange_latency: " << exchange_latency << ", gamma: " << gamma << ", base_size: " << base_size << ", max_inv: " << max_inv << "\n";
-        cout << "initial_cash: " << initial_cash << "\n";
-        cout << "folder_path: " << folder_path << ", events_chunk: " << EVENTS_CHUNK << ", snapshots_chunk: " << SNAPSHOTS_CHUNK << "\n";
-        cout << "trades_chunk: " << TRADES_CHUNK << ", quotes_chunk: " << QUOTES_CHUNK << ", fills_chunk: " << FILLS_CHUNK << "\n";
-        cout << "host: " << host << ", port: " << port << "\n";
-        cout << "hostname: " << hostname << ", base_url: " << base_url << ", endpoint: " << endpoint << "\n";
-
         std_string url = "https://" + base_url + "/" + endpoint + "/exchangeInfo?symbol=" + instrument_upper;
 
         auto r = cpr::Get(cpr::Url{url});
         auto data = json::parse(r.text);
         auto filters = data["symbols"][0]["filters"];
-        
+
+        double min_qty = 0.0;
+        double max_qty = 0.0;
+        double min_notional = 0.0;
+        bool apply_min_market = false;
+
         for(auto& f: filters){
             if(f["filterType"] == "PRICE_FILTER"){
                 tick_size = stod(f["tickSize"].get<std_string>());
                 price_precision = get_precision(tick_size);
-                cout << "tick_size: " << tick_size << ", price_precision: " << price_precision << "\n";
             }
 
             if(f["filterType"] == "LOT_SIZE"){
                 step_size = stod(f["stepSize"].get<std_string>());
                 qty_precision   = get_precision(step_size);
 
-                double min_qty = stod(f["minQty"].get<std_string>());
-                double max_qty = stod(f["maxQty"].get<std_string>());
-
-                cout << "step_size: " << step_size << ", qty_precision: " << qty_precision << "\n";
-                cout << "min_qty: " << min_qty << ", max_qty: " << max_qty << "\n";
+                min_qty = stod(f["minQty"].get<std_string>());
+                max_qty = stod(f["maxQty"].get<std_string>());
             }
 
             if(f["filterType"] == "NOTIONAL") { // spot
-                double min_notional = stod(f["minNotional"].get<std_string>());
-                bool apply_min_to_market = f["applyMinToMarket"].get<bool>();
-
-                cout << "min_notional_USDT: " << min_notional << ", apply_min_to_market: " << boolalpha << apply_min_to_market << "\n";
+                min_notional = stod(f["minNotional"].get<std_string>());
+                apply_min_market = f["applyMinToMarket"].get<bool>();
             }
 
             if(f["filterType"] == "MIN_NOTIONAL") { // futures
-                double min_notional = stod(f["notional"].get<std_string>());
-
-                cout << "min_notional_USDT: " << min_notional << "\n";
+                min_notional = stod(f["notional"].get<std_string>());
             }
         }
+
+        cout << "\n===== MARKET CONFIG =====\n";
+        cout << "exchange:          " << exchange + "_" + market << "\n";
+        cout << "mode:              " << mode << "\n";
+        cout << "instrument:        " << instrument << "\n";
+        cout << "instrument_upper:  " << instrument_upper << "\n";
+
+        cout << "\n===== MODEL CONFIG =====\n";
+        cout << "struct_model:       " << struct_model << "\n";
+        cout << "regime_model:       " << regime_model << "\n";
+        cout << "micro_signal_model: " << micro_signal_model << "\n";
+        cout << "residual_model:     " << residual_model << "\n";
+        cout << "toxicity_model:     " << toxicity_model << "\n";
+
+        cout << "\n===== STRATEGY CONFIG =====\n";
+        cout << "exchange_latency:   " << exchange_latency << "\n";
+        cout << "gamma:              " << gamma << "\n";
+        cout << "initial_position:   " << initial_position << "\n";
+        cout << "base_spread:        " << base_spread << "\n";
+        cout << "base_size:          " << base_size << "\n";
+        cout << "max_inv:            " << max_inv << "\n";
+        cout << "target_notional:    " << target_notional << "\n";
+        cout << "initial_cash:       " << initial_cash << "\n";
+
+        cout << "\n===== EXECUTION CONFIG =====\n";
+        cout << "tick_size:          " << tick_size << "\n";
+        cout << "price_precision:    " << price_precision << "\n";
+        cout << "step_size:          " << step_size << "\n";
+        cout << "qty_precision:      " << qty_precision << "\n";
+        cout << "min_qty:            " << min_qty << "\n";
+        cout << "max_qty:            " << max_qty << "\n";
+        cout << "min_notional_USDT:  " << min_notional << "\n";
+        cout << "apply_min_market:   " << boolalpha << apply_min_market << "\n";
+
+        cout << "\n===== STORAGE CONFIG =====\n";
+        cout << "folder_path:        " << folder_path << "\n";
+        cout << "events_chunk:       " << EVENTS_CHUNK << "\n";
+        cout << "snapshots_chunk:    " << SNAPSHOTS_CHUNK << "\n";
+        cout << "trades_chunk:       " << TRADES_CHUNK << "\n";
+        cout << "quotes_chunk:       " << QUOTES_CHUNK << "\n";
+        cout << "fills_chunk:        " << FILLS_CHUNK << "\n";
+
+        cout << "\n===== HTTP CONFIG =====\n";
+        cout << "host:               " << host << "\n";
+        cout << "port:               " << port << "\n";
+        cout << "hostname:           " << hostname << "\n";
+        cout << "base_url:           " << base_url << "\n";
+        cout << "endpoint:           " << endpoint << "\n";
+
+        cout << "================================\n\n";
     }
 
     int64_t to_tick(const double& price) const {
