@@ -206,7 +206,7 @@ This separation allows each component to be evaluated independently rather than 
 Real-time monitoring of inventory, quote state, fills, markouts, execution latency and P&L. The dashboard is used primarily for execution diagnostics and model validation rather than as a performance presentation.
 
 #### Trading Dashboard
-<img width="500" height="900" alt="dashboard" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/main/dashboard.png"/>
+<img width="600" height="900" alt="dashboard" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/main/dashboard.png"/>
 
 The dashboard connects the research state at quote time to the eventual execution outcome, allowing live observations to be compared against simulated assumptions.
 
@@ -229,7 +229,7 @@ Reported Sharpe:    -0.0209*
 *Calculated from the current live observation series; the sample is insufficient for meaningful inference about long-run risk-adjusted performance.
 
 #### P&L Curve
-<img width="700" height="800" alt="pnl" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/main/pnl_graph.png"/>
+<img width="700" height="400" alt="pnl" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/main/pnl_graph.png"/>
 
 The live sample is too small to estimate persistent profitability.
 
@@ -277,7 +277,7 @@ The regime classifier uses a Gaussian Mixture Model (GMM) over:
 - microprice deviation
 
 #### Regime
-<img width="800" height="400" alt="regime" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/main/regime_detection.png"/>
+<img width="700" height="100" alt="regime" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/main/regime_detection.png"/>
 
 The current regimes are interpreted as:
 
@@ -317,7 +317,7 @@ micro_signal = microprice − mid
 I tested the microprice signal against future mid-price returns using the midprice as the baseline fair-value reference.
 
 #### Microprice IC Curve
-<img width="400" height="800" alt="ic_curve" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/main/microprice_rank_ic.png"/>
+<img width="400" height="300" alt="ic_curve" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/main/microprice_rank_ic.png"/>
 
 The results show increasing predictive information across the tested horizons.
 
@@ -386,7 +386,7 @@ This is more informative than evaluating fills only through aggregate P&L.
 #### Signed Markouts
 Signed markout is defined relative to execution side, such that positive values represent favorable post-fill price movement and negative values represent adverse selection.
 
-<img width="500" height="900" alt="markouts" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/blob/signed_markouts.png"/>
+<img width="500" height="600" alt="markouts" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/blob/signed_markouts.png"/>
 
 The current live sample shows negative markouts for both buy and sell fills, particularly at short horizons. This is consistent with the hypothesis that the strategy is currently exposed to adverse selection.
 
