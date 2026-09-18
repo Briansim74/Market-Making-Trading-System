@@ -1,4 +1,4 @@
-# Market-Making Trading Engine
+# Market-Making Trading System
 Research Findings, Live Results & Next Steps - 18 September 2026
 
 ## 1. Executive Summary
