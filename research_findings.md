@@ -12,7 +12,6 @@ The current live run produced:
 Net P&L:          -$0.04245
 Fees paid:        $0.04065
 Notional traded:  $40.65
-Reported Sharpe:  -0.0209
 ```
 The live sample is too small to draw conclusions about persistent profitability. Its primary value is validating whether the research and execution assumptions survive contact with real exchange executions.
 
@@ -25,7 +24,6 @@ The system combines:
 - market discovery
 - regime classification
 - microstructure alpha
-- structural fair-value estimation
 - residual alpha
 - toxicity modelling
 - queue-aware execution simulation
@@ -63,7 +61,7 @@ The current regimes exhibit different future return and volatility characteristi
 The research question is not whether a regime predicts returns directly, but whether different regimes require different quoting, sizing and inventory policies.
 
 #### H3 - Microprice contains predictive information beyond the immediate quote horizon.
-The current out-of-sample microprice signal shows increasing predictive information through the tested horizons:
+The current microprice signal shows increasing predictive information through the tested horizons:
 ```
 100ms → IC 0.129
 500ms → IC 0.200
@@ -71,7 +69,7 @@ The current out-of-sample microprice signal shows increasing predictive informat
 5s    → IC 0.416
 ```
 
-This suggests that microprice information may be more useful for short-horizon fair-value adjustment than for predicting the next tick.
+The horizon-dependent IC results motivate testing microprice as a short-horizon adjustment rather than assuming it should be used as a next-tick directional signal.
 
 The remaining question is whether incorporating the signal into reservation prices and quote skew improves realized market-making economics after fees, fills and adverse selection.
 
@@ -82,26 +80,12 @@ The live run produced -$0.04245 of P&L on $40.65 of traded notional, with $0.040
 
 The result is too small to assess profitability, but it provides a baseline for measuring actual fills, maker/taker execution, inventory behaviour and realized markouts before adding further model complexity.
 
-#### H5 - Current live fills show negative short-horizon markouts.
-The current live fill sample shows negative signed markouts for both buy and sell executions across the measured horizons.
-
-This is consistent with the hypothesis that the baseline strategy is exposed to adverse selection.
-
-However, the sample is currently too small for statistical inference, and the markout instrumentation requires further validation because the current 100ms, 500ms and 1s outputs are identical.
+#### H5 - Live Fill Analysis showed adverse-selection pressure, while the Toxicity Model remains unvalidated
+The current live sample shows negative signed markouts for both buy and sell fills across the measured horizons. This observation is consistent with adverse-selection pressure, although the sample is currently too small to establish that this effect is persistent or statistically significant.
 
 The immediate priority is therefore to validate the measurement pipeline and collect a larger live-fill dataset before optimizing around the result.
 
-#### H6 - The toxicity model is not yet validated.
-
-The toxicity model is designed to estimate:
-```
-T(x) = E[future signed markout_h ∣ fill, state]
-```
-using spread, volatility, order imbalance, trade imbalance, microprice deviation and regime.
-
-The current model produces NaN IC statistics and effectively constant predictions, so it cannot yet be treated as validated.
-
-The next step is to build a sufficiently large and correctly labelled live-fill dataset, establish an out-of-sample evaluation framework, and then test whether toxicity predictions improve quote selection and sizing.
+The current toxicity analysis produces NaN IC statistics and effectively constant predictions. This prevents meaningful evaluation of the model at present; the immediate priority is therefore to validate the dataset, target construction and train/test pipeline before drawing conclusions about model quality.
 
 ### 1.3. What I Learned
 The main lesson from the project is:
@@ -112,20 +96,26 @@ A predictive signal only has economic value if it can be monetized through the e
 
 I now separate the trading problem into:
 ```
-Alpha
-Where does potential edge exist?
+Market Discovery
+Where does liquidity provision appear economically plausible?
 
 Regime
-When are the underlying signals reliable?
+Under what conditions does the market behave differently?
+
+Midprice
+What is the baseline  reference?
+
+Microprice Alpha
+What short-horizon order-book information can adjust fair value?
 
 Toxicity
-Is a prospective fill likely to be favorable or adverse?
+What happens after I actually get filled?
 
 Execution
-Will the order actually receive a sufficiently favorable fill?
+Can I obtain the expected fill under real queue and latency conditions?
 
 Inventory
-Can repeated fills be managed without creating unacceptable directional exposure?
+Can the strategy manage repeated fills without excessive exposure?
 ```
 
 This decomposition has made the strategy more falsifiable.
@@ -139,7 +129,7 @@ The immediate research priorities are:
 - Validate and recalibrate the regime classifier.
 - Validate the live markout measurement pipeline.
 - Accumulate a sufficiently large live-fill dataset.
-- Test microprice alpha as a bounded fair-value and quote-skew adjustment.
+- Test microprice alpha as a bounded adjustment.
 - Train and validate the toxicity model out of sample.
 - Determine whether toxicity predictions improve realized execution economics.
 - Add residual alpha only if the existing signal stack leaves measurable unexplained information.
@@ -151,17 +141,19 @@ The research progression is therefore:
           ↓
 Regime Classification
           ↓
-Microstructure Alpha
-         ↓
-     Toxicity
-         ↓
+   Midprice Baseline
+          ↓
+   Microprice Alpha
+          ↓
+      Toxicity
+          ↓
 Quote / Skew / Size
-         ↓
+          ↓
  Queue + Execution
-         ↓
+          ↓
   Inventory / Risk
-         ↓
-   Realized P&L
+          ↓
+    Realized P&L
 ```
 
 The objective is not simply to maximize predictive accuracy or backtested returns. It is to establish whether a market-making opportunity survives the complete chain:
@@ -177,14 +169,15 @@ I separated the market-making system into independent hypotheses so that each co
     Market Discovery / H1
             │
             ▼
-    Regime Detection / H2
+    Regime Classification / H2
             │
             ▼
     Signal Generation
-     ├─ Microstructure Alpha / H2
+     ├─ Midprice Baseline
+     ├─ Microprice Alpha / H3
             │
             ▼
-     Toxicity Filter / H4
+     Toxicity Filter / H5
             │
             ▼
     Quote Construction
@@ -199,12 +192,13 @@ Inventory & Risk Management
        Realized P&L
 ```
                      
-| Hypothesis | Component        | Question	                                                                       | Primary Risk                            |
-|------------|------------------|----------------------------------------------------------------------------------|-----------------------------------------|
-| H1	     | Market Discovery | Does regime classification identify materially different execution environments? | Non-stationarity / misclassification    |
-| H2	     | Regime           | Does regime classification identify materially different execution environments? | Non-stationarity / misclassification    |
-| H3	     | Microprice alpha | Does microprice deviation contain useful short-horizon information?              | Signal decay / execution lag            |
-| H4	     | Toxicity         | Can conditional markouts identify adverse-selection risk before quoting?         | Selection bias / insufficient fills     |
+| Hypothesis | Component             | Question	                                                                        | Primary Risk                                                                   |
+|------------|-----------------------|----------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
+| H1	       | Market Discovery      | Do spread, liquidity, balance, fees and activity identify markets with potentially favorable liquidity-provision economics? | Selection bias / unstable liquidity |
+| H2	       | Regime Classification | Does regime classification identify materially different execution environments? | Non-stationarity / misclassification                                           |
+| H3	       | Microprice alpha      | Does microprice deviation contain useful short-horizon information?              | Signal decay / execution lag / timestamp alignment                             |
+| H4	       | Live Execution        | Do the assumptions used in simulation translate into realized execution economics?   | Insufficient sample / queue / fees                                         |
+| H5	       | Toxicity / Markout Analysis | Can fill-conditioned markouts identify adverse-selection risk before quoting?  | Label quality / insufficient fills / selection bias                        |
 
 This separation allows each component to be evaluated independently rather than relying on aggregate live P&L.
 
@@ -222,32 +216,31 @@ The dashboard connects the research state at quote time to the eventual executio
 Live Since:         2026-09-03
 Market:        	    PEPEUSDT
 Venue:	            Binance Spot
-Initial Cash:	    $100
+Initial Cash:	      $100
 Base Size:          $1.1
 Maximum Inventory:  $2.5
 Net P&L:            -$0.04245
 Fees Paid:          $0.04065
-P&L per fill:       -42449899.40 PEPE
-Fees per fill:      40653199.40 PEPE
+P&L per fill:       -$0.00283
+Fees per fill:      $0.00271
 Notional Traded:    $40.65
-Reported Sharpe:    -0.0209
+Reported Sharpe:    -0.0209*
 ```
+*Calculated from the current live observation series; the sample is insufficient for meaningful inference about long-run risk-adjusted performance.
 
 #### P&L Curve
 <img width="700" height="800" alt="pnl" src="https://github.com/Briansim74/Market-Making-Trading-System/blob/main/pnl_graph.png"/>
 
 The live sample is too small to estimate persistent profitability.
 
-The negative P&L should therefore not be interpreted as evidence that the complete strategy has negative expected return.
+The negative P&L should therefore not be interpreted as evidence that the complete strategy has negative expected return. At the same time, it should not be ignored.
 
-At the same time, it should not be ignored.
-
-The current result provides evidence that the baseline execution configuration has not yet demonstrated that it can reliably convert displayed spread into realized economic value.
+The current result does not yet demonstrate that the baseline execution configuration can reliably convert displayed spread into realized economic value. Its primary value is as an execution-validation observation rather than a profitability estimate.
 
 The most useful output from this run is therefore the execution dataset.
 
 ## 6. Empirical Findings
-### 6.1. H1 - Market Discovery
+### 6.1. H1 - Market Discovery showed that displayed spread alone is insufficient to identify attractive market-making opportunities
 The market-discovery layer evaluates whether a market provides sufficient conditions for systematic liquidity provision.
 
 The core objective is:
@@ -266,21 +259,17 @@ Balance = min(Bid,Ask) / max(Bid,Ask)
 ```
 This prevents markets with a large displayed spread but highly asymmetric or shallow liquidity from automatically being treated as attractive.
 
-The current snapshot identified PEPEUSDT as the main deployment market because of its combination of:
-```
-approximately 0.226% displayed net spread;
-
-substantially larger absolute displayed liquidity than most alternatives;
-
-sufficient market activity for continued execution research.
-```
+The market-discovery layer identified PEPEUSDT as the main deployment market because of its combination of:
+- approximately 0.226% displayed spread after fees;
+- substantially larger absolute displayed liquidity than most alternatives;
+- sufficient market activity for continued execution research.
 
 The major caveat is its substantial bid/ask liquidity asymmetry.
 
-This provides a useful live test of whether displayed liquidity actually translates into executable market-making economics.
+Candidate markets differ materially in the quality of liquidity provision opportunities, and displayed spread alone is insufficient because asymmetric or unstable liquidity can make apparent spread difficult to monetize. This provides a useful live test of whether displayed liquidity actually translates into executable market-making economics.
 
-### 6.2. H2 - Regime Classification
-The regime classifier uses a Gaussian Mixture Model over:
+### 6.2. H2 - Market regimes materially change the conditions under which market-making signals are reliable
+The regime classifier uses a Gaussian Mixture Model (GMM) over:
 - spread
 - volatility
 - order imbalance
@@ -293,19 +282,21 @@ The regime classifier uses a Gaussian Mixture Model over:
 The current regimes are interpreted as:
 
 #### Regime 0 - Low Volatility
+```
 Lower volatility and relatively stable market conditions.
-
 Observed future return is close to zero and future volatility is comparatively low.
-
+```
 #### Regime 1 - High Volatility
+```
 Higher volatility with more active price formation.
-
 The regime exhibits higher future volatility and therefore potentially greater adverse-selection and inventory risk.
+```
 
 #### Regime 2 - Directional
+```
 Large order-book imbalance and microprice displacement.
-
 This regime has materially negative observed future return and higher future volatility in the current sample.
+```
 
 The classifier is currently being used as a conditional control variable rather than direct alpha.
 
@@ -317,26 +308,27 @@ The next research step is to determine whether the regime boundaries remain stab
 
 If the clustering is unstable, I will recalibrate the model rather than treating the current labels as permanent market states.
 
-### 6.3. H3 - Microprice Alpha
+### 6.3. H3 - Microprice contains short-horizon predictive information that strengthens with forecast horizon
 The microprice signal is:
 ```
 micro_signal = microprice − mid
 ```
 
-I tested the signal against future mid-price returns without incorporating the structural fair-value model.
+I tested the microprice signal against future mid-price returns using the midprice as the baseline fair-value reference.
 
 #### Microprice IC Curve
 <img width="400" height="800" alt="ic_curve" src="https://github.com/Briansim74/Market-Making-Trading-System/blob/main/microprice_rank_ic.png"/>
 
 The results show increasing predictive information across the tested horizons.
 
-The strongest result is at 5 seconds:
 ```
 IC:           0.416
 Rank IC:      0.330
 Sharpe proxy: 0.207
 ```
-The evidence suggests that the microprice signal contains information about subsequent price evolution.
+Within the tested horizons, the strongest result occurs at 5 seconds, with IC = 0.416 and Rank IC = 0.330.
+
+The increasing IC across the tested horizons suggests that microprice deviation contains information about subsequent price evolution beyond the immediate quote horizon. This motivates testing the signal as a bounded adjustment rather than as a standalone directional trading signal.
 
 However, this does not yet establish that the signal produces positive market-making returns.
 
@@ -355,7 +347,7 @@ Rather than allowing the model to directly determine trading direction, I will t
 
 This preserves the distinction between prediction and execution policy.
 
-### 6.4. H4 - Toxicity Modelling / Live Markout Analysis
+### 6.4. H4 - Live execution revealed a measurable gap between theoretical spread capture and realized market-making economics
 The live system records each fill together with:
 - side
 - price
@@ -387,18 +379,20 @@ Order Placement
        ↓
 Future Price Path
        ↓
-Signed Markout
+ Signed Markout
 ```
 This is more informative than evaluating fills only through aggregate P&L.
 
-#### Markouts
+#### Signed Markouts
+Signed markout is defined relative to execution side, such that positive values represent favorable post-fill price movement and negative values represent adverse selection.
+
 <img width="500" height="900" alt="markouts" src="https://github.com/Briansim74/Market-Making-Trading-System/blob/main/signed_markouts.png"/>
 
 The current live sample shows negative markouts for both buy and sell fills, particularly at short horizons. This is consistent with the hypothesis that the strategy is currently exposed to adverse selection.
 
 However, the current dataset is not yet large enough for statistical inference. The immediate task is therefore to improve the measurement infrastructure before optimizing the model around it.
 
-#### 6.4.1. Toxicity Model
+### 6.5. H5 - Live fills show adverse-selection pressure, but the toxicity signal is not yet validated
 The toxicity model is intended to predict:
 ```
 E[ Markout_h ∣ Fill, State]
@@ -425,46 +419,14 @@ The proposed model uses:
 - regime
 
 The intended outputs are:
-```
-Predicted favorable markout
-             ↓
-  Increase participation
-```
-```
-           Neutral
-              ↓
-       Normal quoting
-```
-```
-       Predicted adverse markout
-                   ↓
-Widen / skew / reduce size / stop quoting
-```
+| Predicted Markout           | Quoting Policy                            |
+|-----------------------------|-------------------------------------------|
+| Favorable                   | Increase participation                    |
+| Neutral                     | Normal quoting                            |
+| Adverse                     | Widen / skew / reduce size / stop quoting |
 
-The current toxicity model cannot yet be considered validated.
 
-The live dataset is too small, and the current test produces NaN correlation statistics and effectively constant predictions.
-
-The next step is therefore not to optimize the XGBoost model.
-
-It is to build a better dataset.
-
-The research sequence will be:
-```
-      Live Fills
-           ↓
-Validated Markout Labels
-           ↓
-   Train / Test Split
-           ↓
-    Toxicity Model
-           ↓
-Out-of-Sample Predictions
-           ↓
-Conditional Fill Analysis
-           ↓
-   Execution Policy
-```
+The current toxicity experiment produces NaN IC statistics and effectively constant predictions. This prevents meaningful evaluation of the model at present; the immediate priority is therefore to validate the dataset, target construction and train/test pipeline before drawing conclusions about model quality.
 
 ## 7. What I Learned
 The project has changed my view of market making from a signal-generation problem into an execution problem.
@@ -486,14 +448,15 @@ This is why I now evaluate the strategy as a chain of conditional decisions rath
 
 The current architecture therefore separates:
 
-| Source of edge                  | Question                                  |
-|---------------------------------|-------------------------------------------|
-| Market discovery                | Where should I trade?                     |
-| Regime classification           | When should I provide liquidity?          |
-| Structural and Microprice alpha | Where should fair value be?               |
-| Toxicity                        | Is a fill likely to be favorable?         |
-| Queue and execution modelling   | Will I actually get the fill?             |
-| Inventory and risk management   | Will the strategy survive repeated fills? |
+| Component                       | Question                                                                |
+|---------------------------------|-------------------------------------------------------------------------|
+| Market discovery                | Where should I trade?                                                   |
+| Regime classification           | When should I provide liquidity?                                        |
+| Midprice                        | What is the baseline fair-value reference?                              |
+| Microprice alpha                | How should short-horizon order-book information adjust fair value?      |
+| Toxicity                        | Is a fill likely to be favorable?                                       |
+| Execution                       | Will I actually get the fill?                                           |
+| Inventory and risk management   | Will the strategy survive repeated fills?                               |
 
 This decomposition also makes failure easier to diagnose.
 
@@ -567,11 +530,9 @@ The immediate priority is to collect more live fills with correctly aligned mark
 
 Each observation should contain:
 - state at quote
-- state at order entry
 - state at fill
 - time to fill
 - queue estimate
-- latency
 - maker/taker status
 - future mid prices
 - future microprice
@@ -605,19 +566,15 @@ The final test is whether using the toxicity signal in the execution policy impr
 #### 8.5. Evaluate Residual Alpha Only If Necessary
 Residual alpha will remain a secondary component.
 
-The current microprice and structural models should first be tested together.
+The baseline midprice quoting policy should first be compared against a policy incorporating microprice alpha. Only if meaningful unexplained residual information remains will I add the XGBoost residual model.
 
-Only if meaningful unexplained residual information remains will I add the XGBoost residual model.
-
-The purpose is to avoid adding model complexity without measurable incremental value.
-
-The comparison will therefore be:
+The purpose is to avoid adding model complexity without measurable incremental value. The comparison will therefore be:
 ```
-Structural Alpha
-      ↓
-Structural + Microprice
-      ↓
-Structural + Microprice + Residual
+            Midprice
+                ↓
+     Midprice + Microprice
+                ↓
+Midprice + Microprice + Residual
 ```
 
 Each additional component must demonstrate incremental out-of-sample value after realistic execution costs.
@@ -654,33 +611,33 @@ The purpose of the research process is to allow the strategy to fail.
 
 #### 9.1. Regime Model
 The regime hypothesis will be weakened if:
-- cluster definitions are unstable across periods;
-- regimes do not produce materially different execution characteristics;
-- regime-conditioned policies do not improve out-of-sample economics;
-- results depend heavily on arbitrary feature scaling or initialization.
+- cluster definitions are unstable across periods
+- regimes do not produce materially different execution characteristics
+- regime-conditioned policies do not improve out-of-sample economics
+- results depend heavily on arbitrary feature scaling or initialization
 
 #### 9.2. Microprice Alpha
 The microprice hypothesis will be weakened if:
-- predictive information disappears out of sample;
-- the signal does not improve fair-value estimation;
-- improvements in IC do not translate into execution economics;
-- transaction costs and adverse selection consume the signal;
-- performance is highly sensitive to a small number of periods.
+- predictive information disappears out of sample
+- the signal does not improve fair-value estimation
+- improvements in IC do not translate into execution economics
+- transaction costs and adverse selection consume the signal
+- performance is highly sensitive to a small number of periods
 
 #### 9.3. Toxicity Model
 The toxicity hypothesis will be weakened if:
-- predicted toxicity does not separate realized markouts;
-- model performance disappears out of sample;
-- filtering toxic fills reduces participation more than it improves economics;
-- the model does not improve realized P&L after accounting for missed fills.
+- predicted toxicity does not separate realized markouts
+- model performance disappears out of sample
+- filtering toxic fills reduces participation more than it improves economics
+- the model does not improve realized P&L after accounting for missed fills
 
 #### 9.4. Overall Strategy
 The market-making strategy will be weakened if:
-- displayed spreads consistently fail to translate into realized spread capture;
-- adverse selection dominates spread capture;
-- queue and latency costs consume the available edge;
-- inventory management materially reduces expected returns;
-- performance disappears after realistic fees and execution costs.
+- displayed spreads consistently fail to translate into realized spread capture
+- adverse selection dominates spread capture
+- queue and latency costs consume the available edge
+- inventory management materially reduces expected returns
+- performance disappears after realistic fees and execution costs
 
 ## 10. Research Framework Going Forward
 The current research framework is:
@@ -715,29 +672,25 @@ under realistic live conditions.
 The market-making system has progressed from historical research and deterministic replay to TestNet execution and live capital deployment. The current live sample is still primarily an execution-validation dataset, rather than sufficient evidence of statistically significant persistent profitability.
 
 The research has nevertheless produced several useful findings.
-
-First, microstructure information contains predictive content beyond the immediate quote horizon. The current microprice signal shows increasing IC through the tested 5-second horizon, suggesting that the information may be more useful for short-horizon fair-value adjustment than for purely ultra-fast prediction.
-
-Second, market-making edge is conditional. The usefulness of a signal depends on the liquidity regime, toxicity of incoming flow, inventory state and execution conditions under which the quote is provided.
-
-Third, execution is a first-class component of the strategy rather than an implementation detail. Queue position, cancellation dynamics, latency, snapshot age and fill selection can determine whether a statistically useful signal becomes economically valuable.
-
-Fourth, live deployment provides information that historical backtesting cannot. The current objective is to measure the gap between simulated and realized:
-- fill probability
-- queue depletion
-- latency
-- quote persistence
-- toxicity
-- markout
-- inventory behaviour
+1. Microstructure information contains predictive content beyond the immediate quote horizon. The current microprice signal shows increasing IC through the tested 5-second horizon, suggesting that the information may be more useful for short-horizon fair-value adjustment than for purely ultra-fast prediction.
+2. Market-making edge is conditional. The usefulness of a signal depends on the liquidity regime, toxicity of incoming flow, inventory state and execution conditions under which the quote is provided.
+3. Execution is a first-class component of the strategy rather than an implementation detail. Queue position, cancellation dynamics, latency, snapshot age and fill selection can determine whether a statistically useful signal becomes economically valuable.
+4. Live deployment provides information that historical backtesting cannot. The current objective is to measure the gap between simulated and realized:
+    - fill probability
+    - queue depletion
+    - latency
+    - quote persistence
+    - toxicity
+    - markout
+    - inventory behaviour
 
 The research framework is therefore:
 ```
              Hypothesis
                   ↓
-            Measurement
+             Measurement
                   ↓
-        Out-of-Sample Test
+         Out-of-Sample Test
                   ↓
            Execution Model
                   ↓
