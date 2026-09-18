@@ -386,7 +386,7 @@ This is more informative than evaluating fills only through aggregate P&L.
 #### Signed Markouts
 Signed markout is defined relative to execution side, such that positive values represent favorable post-fill price movement and negative values represent adverse selection.
 
-<img width="500" height="600" alt="markouts" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/blob/signed_markouts.png"/>
+<img width="450" height="300" alt="markouts" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/main/signed_markouts.png"/>
 
 The current live sample shows negative markouts for both buy and sell fills, particularly at short horizons. This is consistent with the hypothesis that the strategy is currently exposed to adverse selection.
 
