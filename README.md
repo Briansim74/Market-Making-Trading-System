@@ -492,7 +492,7 @@ against real Binance executions under small-capital deployment. (in-progress)
 Below are sample outputs illustrating the engine execution mechanics.
 
 ### Trading Terminal Dashboard with L2 Market Data and Strategy Parameters
-<img width="700" height="1300" alt="React Trading Terminal" src="https://github.com/Briansim74/Market-Making-Research-Platform/blob/main/react.png"/>
+<img width="600" height="700" alt="react" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/main/data/research/react.png"/>
 
 </br></br></br>
 
@@ -1204,7 +1204,7 @@ Below are sample outputs illustrating how the engine behaves.
 
 
 ### Trading Terminal Dashboard with Market Data and Strategy Parameters
-<img width="700" height="1300" alt="React Trading Terminal" src="https://github.com/Briansim74/Market-Making-Research-Platform/blob/main/react.png"/>
+<img width="600" height="700" alt="react" src="https://raw.githubusercontent.com/Briansim74/Market-Making-Trading-System/main/data/research/react.png"/>
 
 </details>
 </br></br>
