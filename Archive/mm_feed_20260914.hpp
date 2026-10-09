@@ -1342,64 +1342,292 @@ public:
     DatasetRecorder& recorder;
     BinanceClock& clock;
 
+    unique_ptr<ws_stream> trade_ws;
+    unique_ptr<ws_stream> depth_ws;
     unique_ptr<ws_stream> ws;
 
     atomic<bool> running{false};
+    atomic<bool> buffering{true};
     atomic<bool> first_depth_received{false};
 
+    vector<Depth> depth_buffer;
     mutex cv_mtx; //condition variable lock
+    mutex buffer_mtx;
     condition_variable cv;
 
     thread ws_thread;
+    thread depth_thread;
+    thread trade_thread;
 
     HyperLiquidFeed(MarketConfig& config, State& state, ExecutionEventQueue& execution_event, 
                     DatasetRecorder& recorder, BinanceClock& clock):
         config(config), state(state), recorder(recorder), execution_event(execution_event), clock(clock) {}
 
-    void parse_hyperliquid_book(simdjson::ondemand::object obj, Depth& entry){
-        
-        auto levels = obj["levels"].get_array();
+    void parse_book(simdjson::ondemand::object obj, Depth& entry){
 
-        for(auto level: levels.at(0).get_array()){
-            auto level_obj = level.get_object();
+        for(auto b: obj["b"]){
+            auto arr = b.get_array();
 
-            double p = level_obj["px"].get_double_in_string();
-            double q = level_obj["sz"].get_double_in_string();
+            double p = double(arr.at(0).get_double_in_string());
+            double q = double(arr.at(1).get_double_in_string());
 
             entry.bid_delta.emplace_back(config.to_tick(p), q);
         }
 
-        for(auto level: levels.at(1).get_array()){
-            auto level_obj = level.get_object();
+        for(auto a: obj["a"]){
+            auto arr = a.get_array();
 
-            double p = level_obj["px"].get_double_in_string();
-            double q = level_obj["sz"].get_double_in_string();
+            double p = double(arr.at(0).get_double_in_string());
+            double q = double(arr.at(1).get_double_in_string());
 
             entry.ask_delta.emplace_back(config.to_tick(p), q);
         }
     }
 
-    void ws_loop(){
+    // void trade_loop(){
+    //     asio::io_context ioc;
+    //     ssl::context ctx(ssl::context::tlsv12_client);
+    //     ctx.set_default_verify_paths();
+
+    //     tcp::resolver resolver(ioc);
+    //     auto results = resolver.resolve(config.hostname, "443");
+
+    //     // -------------------------
+    //     // STEP 1: TCP SOCKET
+    //     // -------------------------
+    //     tcp::socket socket(ioc);
+    //     asio::connect(socket, results);
+
+    //     // -------------------------
+    //     // STEP 2: TLS LAYER
+    //     // -------------------------
+    //     ssl_stream ssl_sock(move(socket), ctx);
+    //     SSL_set_tlsext_host_name(ssl_sock.native_handle(), config.hostname.c_str());
+    //     ssl_sock.handshake(ssl::stream_base::client);
+
+    //     // -------------------------
+    //     // STEP 3: WEBSOCKET LAYER
+    //     // -------------------------
+    //     trade_ws = make_unique<ws_stream>(move(ssl_sock));
+    //     trade_ws->handshake(config.hostname, "/ws/" + config.instrument + "@trade");
+
+    //     beast::flat_buffer buffer;
+    //     simdjson::ondemand::parser parser;
+
+    //     while(running){
+    //         boost::system::error_code ec;
+    //         trade_ws->read(buffer, ec);
+    //         if(ec) break;
+
+    //         std_string msg = beast::buffers_to_string(buffer.data());
+    //         buffer.consume(buffer.size());
+
+    //         simdjson::padded_string json(msg);
+    //         auto doc = parser.iterate(json);
+
+    //         Trade trade;
+    //         trade.ts = int64_t(doc["T"]);
+    //         trade.local_ts = clock.now_ms();
+    //         trade.side  = bool(doc["m"]) ? "SELL" : "BUY";
+    //         trade.price = double(doc["p"].get_double_in_string());
+    //         trade.qty   = double(doc["q"].get_double_in_string());
+    //         trade.latency = clock.compute_feed_latency(trade.local_ts, trade.ts);
+
+    //         recorder.log_event("trade", trade.ts, trade.local_ts, trade.latency, msg);
+
+    //         ExecutionEvent ev;
+    //         ev.type = ExecutionEventType::TRADE_UPDATE;
+    //         ev.trade = trade;
+    //         execution_event.push(ev);
+    //     }
+    // }
+
+    // void depth_loop(){
+    //     asio::io_context ioc;
+    //     ssl::context ctx(ssl::context::tlsv12_client);
+    //     ctx.set_default_verify_paths();
+
+    //     tcp::resolver resolver(ioc);
+    //     auto results = resolver.resolve(config.hostname, "443");
+
+    //     // -------------------------
+    //     // STEP 1: TCP SOCKET
+    //     // -------------------------
+    //     tcp::socket socket(ioc);
+    //     asio::connect(socket, results);
+
+    //     // -------------------------
+    //     // STEP 2: TLS LAYER
+    //     // -------------------------
+    //     ssl_stream ssl_sock(move(socket), ctx);
+    //     SSL_set_tlsext_host_name(ssl_sock.native_handle(), config.hostname.c_str());
+    //     ssl_sock.handshake(ssl::stream_base::client);
+
+    //     // -------------------------
+    //     // STEP 3: WEBSOCKET LAYER
+    //     // -------------------------
+    //     depth_ws = make_unique<ws_stream>(move(ssl_sock));
+    //     depth_ws->handshake(config.hostname, "/ws/" + config.instrument + "@depth@100ms");
+
+    //     beast::flat_buffer buffer;
+    //     simdjson::ondemand::parser parser;
+
+    //     while(running){
+    //         boost::system::error_code ec;
+    //         depth_ws->read(buffer, ec);
+    //         if(ec) break;
+
+    //         std_string msg = beast::buffers_to_string(buffer.data());
+    //         buffer.consume(buffer.size());
+
+    //         simdjson::padded_string json(msg);
+    //         auto doc = parser.iterate(json);
+
+    //         Depth depth;
+    //         depth.ts = int64_t(doc["E"]);
+    //         depth.local_ts = clock.now_ms();
+    //         depth.U = int64_t(doc["U"]);
+    //         depth.u = int64_t(doc["u"]);
+    //         depth.latency = clock.compute_feed_latency(depth.local_ts, depth.ts);
+    //         parse_book(doc.get_object(), depth);
+
+    //         first_depth_received = true;
+    //         cv.notify_all();
+
+    //         recorder.log_event("depth", depth.ts, depth.local_ts, depth.latency, msg);
+
+    //         {
+    //             lock_guard<mutex> lock(buffer_mtx);
+    //             if(buffering){
+    //                 depth_buffer.push_back(depth);
+    //                 continue;
+    //             }
+    //         }
+            
+    //         ExecutionEvent ev;
+    //         ev.type = ExecutionEventType::DEPTH_UPDATE_SPOT;
+    //         ev.depth = depth;
+    //         execution_event.push(ev);
+    //     }
+    // }
+
+    void parse_hyperliquid_book(
+        simdjson::ondemand::object obj,
+        Depth& entry
+    ) {
+        auto levels = obj["levels"].get_array();
+
+        // I'd actually rename bid_delta / ask_delta for Hyperliquid because these aren't deltas.
+
+        // Hyperliquid's l2Book gives you the current levels:
+
+        // levels[0] → complete bid-side levels
+        // levels[1] → complete ask-side levels
+
+        // levels[0] = bids
+        // levels[1] = asks
+
+        auto bids = levels.at(0).get_array();
+        auto asks = levels.at(1).get_array();
+
+        for (auto level : bids) {
+
+            auto level_obj = level.get_object();
+
+            double p =
+                double(
+                    level_obj["px"]
+                        .get_string()
+                        .value()
+                );
+
+            double q =
+                double(
+                    level_obj["sz"]
+                        .get_string()
+                        .value()
+                );
+
+            entry.bid_delta.emplace_back(
+                config.to_tick(p),
+                q
+            );
+        }
+
+        for (auto level : asks) {
+
+            auto level_obj = level.get_object();
+
+            double p =
+                double(
+                    level_obj["px"]
+                        .get_string()
+                        .value()
+                );
+
+            double q =
+                double(
+                    level_obj["sz"]
+                        .get_string()
+                        .value()
+                );
+
+            entry.ask_delta.emplace_back(
+                config.to_tick(p),
+                q
+            );
+        }
+    }
+
+    void ws_loop() {
+
         asio::io_context ioc;
-        ssl::context ctx(ssl::context::tlsv12_client);
+
+        ssl::context ctx(
+            ssl::context::tlsv12_client
+        );
+
         ctx.set_default_verify_paths();
 
         tcp::resolver resolver(ioc);
-        auto results = resolver.resolve("api.hyperliquid.xyz", "443");
+
+        auto results =
+            resolver.resolve(
+                "api.hyperliquid.xyz",
+                "443"
+            );
 
         tcp::socket socket(ioc);
+
         asio::connect(socket, results);
 
-        ssl_stream ssl_sock(move(socket), ctx);
-        SSL_set_tlsext_host_name(ssl_sock.native_handle(), "api.hyperliquid.xyz");
-        ssl_sock.handshake(ssl::stream_base::client);
+        ssl_stream ssl_sock(
+            move(socket),
+            ctx
+        );
 
-        ws = make_unique<ws_stream>(move(ssl_sock));
-        ws->handshake("api.hyperliquid.xyz", "/ws");
+        SSL_set_tlsext_host_name(
+            ssl_sock.native_handle(),
+            "api.hyperliquid.xyz"
+        );
+
+        ssl_sock.handshake(
+            ssl::stream_base::client
+        );
+
+        ws = make_unique<ws_stream>(
+            move(ssl_sock)
+        );
+
+        ws->handshake(
+            "api.hyperliquid.xyz",
+            "/ws"
+        );
 
         // -----------------------------
         // SUBSCRIBE BOOK
         // -----------------------------
+
         string book_sub = R"({
             "method": "subscribe",
             "subscription": {
@@ -1413,6 +1641,7 @@ public:
         // -----------------------------
         // SUBSCRIBE TRADES
         // -----------------------------
+
         string trade_sub = R"({
             "method": "subscribe",
             "subscription": {
@@ -1426,115 +1655,136 @@ public:
         // -----------------------------
         // READ
         // -----------------------------
+
         beast::flat_buffer buffer;
+
         simdjson::ondemand::parser parser;
 
-        while(running){
-            boost::system::error_code ec;
-            ws->read(buffer, ec);
-            if(ec) break;
+        while (running) {
 
-            std_string msg = beast::buffers_to_string(buffer.data());
+            boost::system::error_code ec;
+
+            ws->read(buffer, ec);
+
+            if (ec)
+                break;
+
+            string msg =
+                beast::buffers_to_string(
+                    buffer.data()
+                );
+
             buffer.consume(buffer.size());
 
             simdjson::padded_string json(msg);
+
             auto doc = parser.iterate(json);
-            cout << "msg: " << msg << "\n";
-            string_view channel = doc["channel"].get_string().value();
+
+            string_view channel =
+                doc["channel"]
+                    .get_string()
+                    .value();
 
             // -----------------------------
             // BOOK
             // -----------------------------
-            if(channel == "l2Book"){
-                auto data = doc["data"].get_object().value();
-                
+
+            if (channel == "l2Book") {
+
+                auto data =
+                    doc["data"].get_object();
+
                 Depth depth;
-                depth.ts = int64_t(data["time"].get_uint64());
-                depth.local_ts = clock.now_ms();
-                depth.latency = clock.compute_feed_latency(depth.local_ts, depth.ts);    
-                
-                parse_hyperliquid_book(data, depth);
 
-                // DEBUG
-                cout << "\n========== HYPERLIQUID BOOK ==========\n";
+                depth.ts =
+                    int64_t(
+                        data["time"]
+                            .get_uint64()
+                    );
 
-                cout << "exchange_ts: " << depth.ts
-                    << " local_ts: " << depth.local_ts
-                    << " latency: " << depth.latency << " ms\n";
+                depth.local_ts =
+                    clock.now_ms();
 
-                cout << "BIDS:\n";
+                depth.latency =
+                    clock.compute_feed_latency(
+                        depth.local_ts,
+                        depth.ts
+                    );
 
-                for(size_t i = 0;
-                    i < min<size_t>(5, depth.bid_delta.size());
-                    ++i)
-                {
-                    auto [tick, qty] = depth.bid_delta[i];
+                depth.is_snapshot = true;
 
-                    cout << "  "
-                        << i
-                        << " px_tick=" << tick
-                        << " qty=" << qty
-                        << "\n";
-                }
+                parse_hyperliquid_book(
+                    data,
+                    depth
+                );
 
-                cout << "ASKS:\n";
+                recorder.log_event(
+                    "depth",
+                    depth.ts,
+                    depth.local_ts,
+                    depth.latency,
+                    msg
+                );
 
-                for(size_t i = 0;
-                    i < min<size_t>(5, depth.ask_delta.size());
-                    ++i)
-                {
-                    auto [tick, qty] = depth.ask_delta[i];
+                // FIRST BOOK
+                if (!first_depth_received) {
 
-                    cout << "  "
-                        << i
-                        << " px_tick=" << tick
-                        << " qty=" << qty
-                        << "\n";
-                }
-
-                cout << "=======================================\n";
-
-                recorder.log_event("depth", depth.ts, depth.local_ts, depth.latency, msg);
-
-                // FIRST BOOK - ORDERBOOK SNAPSHOT EQUIVALENT
-                if(!first_depth_received){
-                    state.market_book.replace_book(depth);
+                    state.market_book
+                        .replace_book(depth);
 
                     first_depth_received = true;
+
                     cv.notify_all();
+
+                    state.update_vol();
+
                     continue;
                 }
 
                 // SUBSEQUENT BOOK
                 ExecutionEvent ev;
-                ev.type = ExecutionEventType::HYPERLIQUID_DEPTH_UPDATE;
+
+                ev.type =
+                    ExecutionEventType::DEPTH_UPDATE_SPOT;
+
                 ev.depth = depth;
+
                 execution_event.push(ev);
             }
 
             // -----------------------------
             // TRADES
             // -----------------------------
-            else if(channel == "trades"){
-                auto data = doc["data"].get_array();
 
-                for(auto trade_obj: data){
-                    auto obj = trade_obj.get_object();
-                    string_view side = obj["side"].get_string().value();
-                    
+            else if (channel == "trades") {
+
+                auto data =
+                    doc["data"].get_array();
+
+                for (auto trade_obj : data) {
+
                     Trade trade;
-                    trade.ts = int64_t(obj["time"].get_uint64());
-                    trade.local_ts = clock.now_ms();
-                    trade.side = (side == "B") ? "BUY" : "SELL";
-                    trade.price = double(obj["px"].get_double_in_string());
-                    trade.qty = double(obj["sz"].get_double_in_string());
-                    trade.latency = clock.compute_feed_latency(trade.local_ts, trade.ts);
 
-                    recorder.log_event("trade", trade.ts, trade.local_ts, trade.latency, msg);
+                    parse_hyperliquid_trade(
+                        trade_obj.get_object(),
+                        trade
+                    );
+
+                    recorder.log_event(
+                        "trade",
+                        trade.ts,
+                        trade.local_ts,
+                        trade.latency,
+                        msg
+                    );
 
                     ExecutionEvent ev;
-                    ev.type = ExecutionEventType::TRADE_UPDATE;
+
+                    ev.type =
+                        ExecutionEventType::TRADE_UPDATE;
+
                     ev.trade = trade;
+
                     execution_event.push(ev);
                 }
             }
@@ -1542,33 +1792,146 @@ public:
     }
 
     void start() override {
+
         running = true;
+
         first_depth_received = false;
 
-        ws_thread = thread(&HyperLiquidFeed::ws_loop, this);
+        ws_thread =
+            thread(&HyperliquidFeed::ws_loop, this);
 
         {
             unique_lock<mutex> lock(cv_mtx);
-            cv.wait_for(lock, 5s, [&]{return first_depth_received.load();});
+
+            cv.wait_for(
+                lock,
+                5s,
+                [&] {
+                    return first_depth_received.load();
+                }
+            );
         }
 
-        if(!first_depth_received) throw runtime_error("No Hyperliquid book received");
+        if (!first_depth_received) {
+            throw runtime_error(
+                "No Hyperliquid book received"
+            );
+        }
 
         state.initialized = true;
 
         cout << "HYPERLIQUID BOOK RUNNING\n";
     }
 
+    void replace_book(const Depth& depth) {
+
+        bids.clear();
+        asks.clear();
+
+        for (auto& [tick, size] : depth.bid_delta) {
+            if (size > 0)
+                bids[tick] = size;
+        }
+
+        for (auto& [tick, size] : depth.ask_delta) {
+            if (size > 0)
+                asks[tick] = size;
+        }
+
+        last_update_id = 0;
+    }
+
+    // void start() override {
+    //     running = true;
+    //     buffering = true;
+
+    //     depth_buffer.clear();
+    //     first_depth_received = false;
+
+    //     trade_thread = thread(&BinanceSpotFeed::trade_loop, this);
+    //     depth_thread = thread(&BinanceSpotFeed::depth_loop, this);
+
+    //     cout << "LIVE SPOT SOCKETS STARTED\n";
+
+    //     // wait for first message
+    //     {
+    //         unique_lock<mutex> lock(cv_mtx);
+    //         cv.wait_for(lock, 5s, [&]{ return first_depth_received.load(); });
+    //     }
+
+    //     auto [snapshot_id, snapshot] = state.market_book.initialize_from_binance();
+
+    //     recorder.export_orderbook_snapshot(snapshot);
+
+    //     // -------------------------
+    //     // WAIT FOR STREAM ALIGNMENT (YOUR GATE FIX)
+    //     // -------------------------
+    //     bool valid = false;
+
+    //     for(int i = 0; i < 500; i++){
+    //         {
+    //             lock_guard<mutex> lock(buffer_mtx);
+
+    //             if(!depth_buffer.empty() && depth_buffer.back().u > snapshot_id){
+    //                 valid = true;
+    //                 break;
+    //             }
+    //         }
+    //         this_thread::sleep_for(milliseconds(10));
+    //     }
+
+    //     if(!valid) throw runtime_error("Stream not aligned (no post-snapshot events)");
+        
+    //     vector<Depth> buffered;
+    //     {
+    //         lock_guard lock(buffer_mtx);
+    //         buffered = depth_buffer;   // copy, don't swap
+    //     }
+        
+    //     sort(buffered.begin(), buffered.end(), [](const auto& a, const auto& b) {return a.U < b.U;});
+
+    //     auto it = find_if(buffered.begin(), buffered.end(), [&](const Depth& d){
+    //         return d.U <= snapshot_id + 1 && snapshot_id + 1 <= d.u;});
+
+    //     if(it == buffered.end()) throw runtime_error("Couldn't synchronize order book");
+        
+    //     // -------------------------
+    //     // APPLY REPLAY
+    //     // -------------------------
+    //     for(; it != buffered.end(); ++it){
+    //         cout << "BUFFER U: " << it->U << " snapshot_id + 1: " << snapshot_id + 1 << " u: " << it->u << "\n";
+
+    //         state.market_book.apply_delta(*it);
+    //         state.market_book.last_update_id = it->u;
+    //         state.update_vol();
+    //     }
+
+    //     cout << "BOOK SYNCHRONIZED\n";
+        
+    //     // -------------------------
+    //     // LIVE MODE
+    //     // -------------------------
+    //     {
+    //         lock_guard<mutex> lock(buffer_mtx);
+    //         buffering = false;
+    //     }
+    //     state.initialized = true;
+
+    //     cout << "LIVE BOOK RUNNING\n";
+    // }
+
     void stop() override {
-        cout << "STOPPING HYPERLIQUID FEED\n";
+        cout << "STOPPING BINANCE FEED\n";
 
         running = false;
 
         boost::system::error_code ec;
-        beast::get_lowest_layer(*ws).cancel(ec);
+        beast::get_lowest_layer(*trade_ws).cancel(ec);
+        beast::get_lowest_layer(*depth_ws).cancel(ec);
 
-        if(ws_thread.joinable()) ws_thread.join();
+        if(trade_thread.joinable()) trade_thread.join();
+        if(depth_thread.joinable()) depth_thread.join();
 
-        cout << "HYPERLIQUID FEED STOPPED\n";
+        cout << "BINANCE FEED STOPPED\n";
     }
 };

@@ -140,8 +140,8 @@ public:
                 on_cancel_event();
                 break;
 
-            case ExecutionEventType::MARK_PRICE_UPDATE:
-                on_mark_price_event(ev.stream);
+            case ExecutionEventType::HYPERLIQUID_DEPTH_UPDATE:
+                on_depth_event_hyperliquid(ev.depth);
                 break;
         }
 
@@ -417,6 +417,62 @@ public:
         execution.place_quotes(*state.last_signal);
     }
 
+    void on_depth_event_hyperliquid(const Depth& depth){
+        // -------------------------
+        // LIVE PROCESSING
+        // -------------------------
+        state.time = depth.local_ts;
+        state.last_depth_ts = depth.ts;
+        state.depth_latency = depth.latency;
+        
+        auto& book = state.market_book;
+
+        // // -----------------------------
+        // // DROP OLD EVENTS
+        // // -----------------------------
+        // if(depth.u <= book.last_update_id) return;
+
+        // // -----------------------------
+        // // GAP DETECTION
+        // // -----------------------------
+        // if(depth.U > book.last_update_id + 1){
+        //     cout << "GAP DETECTED expected " << book.last_update_id + 1 << " got " << depth.U << "\n";
+        //     state.initialized = false;
+        //     return;
+        // }
+
+        // -----------------------------
+        // APPLY DELTA - REMOVE LOCK FOR SINGLE THREADED QUEUE
+        // -----------------------------
+        state.update_queue_from_depth(depth);
+        // book.apply_delta(depth);
+        book.replace_book(depth);
+        // book.last_update_id = depth.u; // last update id updated from replace book
+
+        // // -----------------------------
+        // // HEAVY FEATURES
+        // // -----------------------------
+        // state.update_vol();
+        // state.compute_order_imbalance();
+        // state.update_market_feature_state();
+        // state.update_residual_realization();
+        // state.update_toxicity_realization(); // NEW
+        // state.update_performance();
+
+        // // -----------------------------
+        // // STRATEGY ONLY AFTER INIT
+        // // -----------------------------
+        // if(!state.initialized) return;
+
+        // Signal signal = strategy.generate_quotes(state);
+        // recorder.log_snapshot(signal);
+        // state.last_signal = signal;
+
+        // if(!trading_enabled) return; // to be changed if shift to error style
+
+        // // execution.place_quotes(signal);
+    }
+
     void on_cancel_event(){
         cout << "CANCELLING OPEN ORDERS\n";
         execution.cancel_all_orders();
@@ -426,11 +482,6 @@ public:
             wait_for_flatten();
         }
         cout << "CANCELLING OPEN ORDERS1\n";
-    }
-
-    void on_mark_price_event(const Stream& stream){
-        state.time = stream.local_ts;
-        state.mark_price = stream.price;
     }
 
     void wait_for_cancel(){
@@ -678,6 +729,10 @@ public:
 
         else if(config.exchange == "polymarket"){
             feed = make_unique<PolymarketFeed>(config, state, execution_event, recorder, clock);
+        }
+
+        else if(config.exchange == "hyperliquid"){
+            feed = make_unique<HyperLiquidFeed>(config, state, execution_event, recorder, clock);
         }
 
         engine = make_unique<Engine>(config, state, strategy, *execution, clock, execution_event, dashboard_event, snapshot_store, recorder);

@@ -403,4 +403,20 @@ public:
             else asks[price_tick] = q;
         }
     }
+
+    void replace_book(const Depth& entry){
+
+        bids.clear();
+        asks.clear();
+
+        for(auto& [price_tick, q]: entry.bid_delta){
+            if(q > 0) bids[price_tick] = q;
+        }
+
+        for(auto& [price_tick, q]: entry.ask_delta){
+            if(q > 0) asks[price_tick] = q;
+        }
+
+        last_update_id = 0;
+    }
 };

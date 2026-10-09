@@ -156,7 +156,7 @@ enum class ExecutionEventType{
     DEPTH_UPDATE_FUTURES,
     STREAM_UPDATE,
     CANCEL_UPDATE,
-    MARK_PRICE_UPDATE
+    HYPERLIQUID_DEPTH_UPDATE
 };
 
 struct ExecutionEvent{
