@@ -168,6 +168,8 @@ public:
         max_inv = params["max_inv"].get<double>();
         target_notional = params["target_notional"].get<double>();
         initial_cash = params["initial_cash"].get<double>();
+        maker_fee_rate = params["fees"]["maker_fee_rate"].get<double>();
+        taker_fee_rate = params["fees"]["taker_fee_rate"].get<double>();
 
         folder_path = params["folder_path"].get<std_string>();
         EVENTS_CHUNK = params["dataset"]["events_chunk"].get<size_t>();
@@ -242,6 +244,8 @@ public:
         cout << "max_inv:            " << max_inv << "\n";
         cout << "target_notional:    " << target_notional << "\n";
         cout << "initial_cash:       " << initial_cash << "\n";
+        cout << "maker_fee_rate:     " << maker_fee_rate << "\n";
+        cout << "taker_fee_rate:     " << maker_fee_rate << "\n";
 
         cout << "\n===== EXECUTION CONFIG =====\n";
         cout << "tick_size:          " << tick_size << "\n";

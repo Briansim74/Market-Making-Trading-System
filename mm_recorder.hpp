@@ -110,6 +110,7 @@ public:
     int trades_id = 0;
     int quotes_id = 0;
     int fills_id = 0;
+    int total_fills = 0;
 
     DatasetRecorder(MarketConfig& config, State& state, const ordered_json& params)
         : config(config), state(state), params(params) {initialize();}
@@ -254,6 +255,7 @@ public:
         // flush fills
         if(!fills.empty()){
             fills_path = build_file_path("fills", fills_id++);
+            total_fills += fills.size();
             export_fill_parquet(fills);
         }
 
@@ -276,8 +278,8 @@ public:
             {"annualized_sortino", performance.annualized_sortino},
             {"fees_paid", state.fees_paid},
             {"notional_traded", state.notional_traded},
-            {"fees_per_fill", state.fees_paid / (fills.size() + 1e-9)},
-            {"pnl_per_fill", state.get_pnl(state.market_book.mid()) / (fills.size() + 1e-9)}
+            {"fees_per_fill", state.fees_paid / (total_fills + 1e-9)},
+            {"pnl_per_fill", state.get_pnl(state.market_book.mid()) / (total_fills + 1e-9)}
         };
 
         ofstream(manifest_path) << manifest.dump(2);
@@ -1364,6 +1366,7 @@ public:
 
         if(fills.size() >= config.FILLS_CHUNK){
             fills_path = build_file_path("fills", fills_id++);
+            total_fills += config.FILLS_CHUNK;
             export_fill_parquet(fills);
             fills.clear();
         }
