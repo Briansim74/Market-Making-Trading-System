@@ -698,9 +698,6 @@ public:
         double vol_component = 3.0 * features.volatility * features.mid; // added dimension change to mid price
         double raw_spread = max(features.spread, vol_component);
 
-        // double spread = raw_spread * policy.spread_multiplier * (1.0 + toxicity.k_spread * toxicity.tox);
-
-        // test for base_spread
         double spread = config.base_spread * features.spread * policy.spread_multiplier * (1.0 + toxicity.k_spread * toxicity.tox);
 
         return spread;

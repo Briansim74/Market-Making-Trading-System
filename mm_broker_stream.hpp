@@ -96,21 +96,6 @@ public:
 
     HttpClient(MarketConfig& config) : config(config), ctx(ssl::context::tlsv12_client), ssl_sock(ioc, ctx) {}
 
-    void reconnect(){
-        cout << "[HTTP] - broker reconnecting...\n";
-
-        beast::error_code ec;
-        ssl_sock.shutdown(ec);
-
-        ssl_sock.next_layer().shutdown(tcp::socket::shutdown_both, ec);
-        ssl_sock.next_layer().close(ec);
-
-        // Recreate the socket
-        ssl_sock = ssl_stream(ioc, ctx);
-
-        initialize();
-    }
-
     void initialize(){
         ctx.set_default_verify_paths();
         
@@ -125,6 +110,21 @@ public:
         cout << "[HTTP] - broker connected: " << config.base_url << "\n";
     }
 
+    void reconnect(){
+        cout << "[HTTP] - broker reconnecting\n";
+
+        beast::error_code ec;
+        ssl_sock.shutdown(ec);
+
+        ssl_sock.next_layer().shutdown(tcp::socket::shutdown_both, ec);
+        ssl_sock.next_layer().close(ec);
+
+        // Recreate the socket
+        ssl_sock = ssl_stream(ioc, ctx);
+
+        initialize();
+    }
+
     string request(http::verb method, const string& target,
                 const vector<string>& headers = {}, const string& body = ""){
 
@@ -133,9 +133,6 @@ public:
 
         req.set(http::field::host, config.base_url);
         req.set(http::field::user_agent, config.struct_model);
-
-
-        // req.set(http::field::connection, "keep-alive"); //DEBUG
 
         for(const auto& h: headers){
             auto pos = h.find(":");
@@ -157,39 +154,16 @@ public:
         }
 
         beast::flat_buffer buffer;
-
-        // check if alive - to be removed
         beast::error_code ec;
 
         http::write(ssl_sock, req, ec);
-
-        // cout << "[HTTP] WRITE END: " << ec.message() << '\n';
-     
         http::response<http::string_body> res;
         http::read(ssl_sock, buffer, res, ec);
 
-        cout << "[HTTP] READ END: "
-            << ec.value() << " - "
-            << ec.message() << '\n';
-
         if(ec){
-            cout << "[HTTP] READ ERROR reconnnecting: "
-                << ec.value() << " - "
-                << ec.message() << "\n";
-
             reconnect();
-
-            return "test";
+            return "reconnect";
         }
-
-        cout << "[HTTP] keep_alive: "
-            << res.keep_alive() << '\n';
-
-        cout << "[HTTP] body size: "
-            << res.body().size() << '\n';
-
-        // cout << "[HTTP] body: "
-        //     << res.body() << '\n';
 
         if(res.result_int() >= 400){
             cout << "[HTTP] - ERROR: status >= 400: HTTP " + to_string(res.result_int()) + ": " + res.body();
@@ -320,9 +294,15 @@ public:
 
         std_string url = "/" + config.endpoint + "/order?" + query + "&signature=" + signature;
         vector<std_string> headers = {"X-MBX-APIKEY: " + config.api_key};
-        cout << "[BROKER] - 1\n";
+
         auto res = http.request(http::verb::post, url, headers);
-        cout << "[BROKER] - 2\n";
+
+        if(res == "reconnect"){
+            cout << "\n========== BROKER RESPONSE ==========\n";
+            cout << "[BROKER] - replacing place limit\n";
+            res = http.request(http::verb::post, url, headers); // deleted auto res = ...
+        }
+
         return json::parse(res);
     }
 
@@ -360,14 +340,13 @@ public:
         vector<std_string> headers = {"X-MBX-APIKEY: " + config.api_key};
 
         auto res = http.request(http::verb::delete_, url, headers);
-        cout << "[BROKER] - 1.1a\n";
-        if(res == "test"){
+
+        if(res == "reconnect"){
             cout << "\n========== BROKER RESPONSE ==========\n";
             cout << "[BROKER] - replacing cancel\n";
-            auto res = http.request(http::verb::delete_, url, headers);
+            res = http.request(http::verb::delete_, url, headers); // deleted auto res = ...
         }
 
-        cout << "[BROKER] - 2a\n";
         return json::parse(res);
     }
 };
@@ -752,7 +731,7 @@ public:
     void on_message(const std_string& msg){
         simdjson::padded_string json(msg);
         auto doc = parser.iterate(json);
-        cout << "msg1: " << msg << "\n";
+
         simdjson::ondemand::object o = doc["event"].get_object();
 
         if(std_string(o["e"]) != "executionReport") return;

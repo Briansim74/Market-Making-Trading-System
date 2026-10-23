@@ -92,32 +92,9 @@ public:
     ssl::context ctx;
     ssl_stream ssl_sock;
 
-    atomic<bool> running{false};
-    condition_variable http_cv;
-
     mutex http_mtx; // execution and broker keepalive mtx
-    thread http_thread;
 
     HttpClient(MarketConfig& config) : config(config), ctx(ssl::context::tlsv12_client), ssl_sock(ioc, ctx) {}
-
-    void start(){
-        running = true;
-        // http_thread = thread(&HttpClient::reconnect_loop, this);
-    }
-
-    // void reconnect_loop(){
-    //     while(running){
-    //         unique_lock<mutex> lock(http_mtx);
-    //         http_cv.wait_for(lock, minutes(2), [this]{return !running.load();});
-            
-    //         try{
-    //             reconnect();
-    //         }
-    //         catch(const exception& e){
-    //             cout << "[HTTP] - HTTP CLIENT ERROR: " << e.what() << "\n";
-    //         }
-    //     }
-    // }
 
     void reconnect(){
         cout << "[HTTP] - broker reconnecting...\n";
@@ -186,53 +163,14 @@ public:
 
         http::write(ssl_sock, req, ec);
 
-        cout << "[HTTP] WRITE END: " << ec.message() << '\n';
+        // cout << "[HTTP] WRITE END: " << ec.message() << '\n';
      
-        // http::response<http::string_body> res;
-        // http::read(ssl_sock, buffer, res);
-
-        // http::read(ssl_sock, buffer, res, ec);
-
-        // cout << "[HTTP] READ END: "
-        //     << ec.value() << " - "
-        //     << ec.message() << '\n';
-
-        // cout << "[HTTP] status: "
-        //     << res.result_int() << '\n';
-
-        // cout << "[HTTP] keep_alive: "
-        //     << res.keep_alive() << '\n';
-
-        // cout << "[HTTP] body size: "
-        //     << res.body().size() << '\n';
-
-        // cout << "[HTTP] body: "
-        //     << res.body() << '\n';
-
-        // cout << "[HTTP] RESPONSE HEADERS:\n";
-
-        // for(auto const& field : res){
-        //     cout << "[HTTP] "
-        //         << field.name_string()
-        //         << ": "
-        //         << field.value()
-        //         << '\n';
-        // }
-
-
-        http::response_parser<http::string_body> parser;
-
-        http::read(ssl_sock, buffer, parser, ec);
+        http::response<http::string_body> res;
+        http::read(ssl_sock, buffer, res, ec);
 
         cout << "[HTTP] READ END: "
-            << ec.value()
-            << " - "
-            << ec.message()
-            << "\n";
-
-        cout << "[HTTP] parser.is_done(): "
-            << parser.is_done()
-            << "\n";
+            << ec.value() << " - "
+            << ec.message() << '\n';
 
         if(ec){
             cout << "[HTTP] READ ERROR reconnnecting: "
@@ -244,49 +182,15 @@ public:
             return "test";
         }
 
-        auto& res = parser.get();
-
-        cout << "[HTTP] status: "
-            << res.result_int()
-            << "\n";
+        cout << "[HTTP] keep_alive: "
+            << res.keep_alive() << '\n';
 
         cout << "[HTTP] body size: "
-            << res.body().size()
-            << "\n";
+            << res.body().size() << '\n';
 
-        cout << "[HTTP] body: ["
-            << res.body()
-            << "]\n";
+        // cout << "[HTTP] body: "
+        //     << res.body() << '\n';
 
-        cout << "[HTTP] TEST KEEP ALIVE: "
-            << res.keep_alive() << "\n";
-
-        cout << "[HTTP] RESPONSE HEADERS:\n";
-
-        for(auto const& field : res){
-            cout << "[HTTP] "
-                << field.name_string()
-                << ": "
-                << field.value()
-                << "\n";
-        }
-
-        if(res.result_int() >= 400){
-            cout << "[HTTP] ERROR: HTTP "
-                << res.result_int()
-                << ": "
-                << res.body()
-                << '\n';
-        }
-
-        // if(!parser.is_done()){
-        //     cout << "[HTTP] PARSER NOT DONE... RECONNECTING...\n";
-        //     reconnect();
-        //     cout << "test\n";
-        //     return R"({"test":"parser_not_done"})";;
-        // }
-
-        cout << "http3\n";
         if(res.result_int() >= 400){
             cout << "[HTTP] - ERROR: status >= 400: HTTP " + to_string(res.result_int()) + ": " + res.body();
         }
@@ -295,14 +199,6 @@ public:
         if(method != http::verb::get) cout << res << endl;
 
         return res.body();
-    }
-
-    void stop(){
-        running = false;
-        // http_cv.notify_one();
-
-        // if(http_thread.joinable()) http_thread.join();
-        cout << "HTTP CLIENT STOPPED\n";
     }
 };
 
@@ -328,7 +224,6 @@ public:
         : config(config), clock(clock), http(config)
         {
             http.initialize();
-            http.start();
             get_fee_rates();
         }
 
@@ -336,9 +231,7 @@ public:
         return "";
     }
 
-    void stop(){
-        http.stop();
-    }
+    void stop(){}
 
     // -------------------------
     // SIGNING
@@ -462,14 +355,15 @@ public:
 
         std_string query = q.str();
         std_string signature = sign(query);
-        cout << "[BROKER] - cancel query: " << query << "\n";
+
         std_string url = "/" + config.endpoint + "/order?" + query + "&signature=" + signature;
         vector<std_string> headers = {"X-MBX-APIKEY: " + config.api_key};
-        cout << "[BROKER] - 1a\n";
+
         auto res = http.request(http::verb::delete_, url, headers);
         cout << "[BROKER] - 1.1a\n";
         if(res == "test"){
-            cout << "replacing cancel\n";
+            cout << "\n========== BROKER RESPONSE ==========\n";
+            cout << "[BROKER] - replacing cancel\n";
             auto res = http.request(http::verb::delete_, url, headers);
         }
 

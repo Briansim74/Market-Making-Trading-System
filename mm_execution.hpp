@@ -701,8 +701,6 @@ public:
         json resp = broker.place_limit(order, price, size);
         order.resp = resp;
 
-        cout << "[BROKER] - SUCCESSFUL RESP\n";
-
         if(resp.contains("code")){
             int code = resp["code"];
 
@@ -815,10 +813,9 @@ public:
         ", side: " << order->side << ", status: " << order->status <<", ts: " << order->ts << "\n";
 
         json resp = broker.cancel_order(*order);
-
         order->resp = resp;
-        cout << "[BROKER] - SUCCESSFUL CANCEL RESP1\n";
-        if(resp.contains("code")){ // TO BE DELETED
+
+        if(resp.contains("code")){
             int code = resp["code"];
 
             if(code == -2011){ // Order already filled/canceled
