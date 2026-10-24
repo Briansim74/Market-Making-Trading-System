@@ -487,6 +487,8 @@ The execution stack determines whether that edge can actually be monetized.
   - regime classifications
 
 against real Binance executions under small-capital deployment. (in-progress)
+- Price discovery fair value adjustment
+- Hedging with Perps
 
 ## Example Output
 Below are sample outputs illustrating the engine execution mechanics.
