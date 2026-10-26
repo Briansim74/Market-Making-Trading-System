@@ -111,6 +111,7 @@ public:
     }
 
     void reconnect(){
+        cout << "[HTTP] - broker RECONNECT\n";
         cout << "[HTTP] - broker reconnecting\n";
 
         beast::error_code ec;
@@ -128,51 +129,60 @@ public:
     string request(http::verb method, const string& target,
                 const vector<string>& headers = {}, const string& body = ""){
 
-        lock_guard<mutex> lock(http_mtx);
-        http::request<http::string_body> req{method, target, 11};
+        for(int attempt = 1; attempt <= 3; attempt++){
 
-        req.set(http::field::host, config.base_url);
-        req.set(http::field::user_agent, config.struct_model);
+            beast::error_code ec;
+            http::response<http::string_body> res;
 
-        for(const auto& h: headers){
-            auto pos = h.find(":");
+            cout << "[HTTP] - ATTEMPT " << attempt << "\n";
 
-            if(pos != string::npos){
-                std_string key = h.substr(0, pos);
-                std_string value = h.substr(pos + 1);
+            {
+                lock_guard<mutex> lock(http_mtx);
+                http::request<http::string_body> req{method, target, 11};
 
-                while(!value.empty() && value[0] == ' ')
-                    value.erase(value.begin());
+                req.set(http::field::host, config.base_url);
+                req.set(http::field::user_agent, config.struct_model);
 
-                req.set(key,value);
+                for(const auto& h: headers){
+                    auto pos = h.find(":");
+
+                    if(pos != string::npos){
+                        std_string key = h.substr(0, pos);
+                        std_string value = h.substr(pos + 1);
+
+                        while(!value.empty() && value[0] == ' ')
+                            value.erase(value.begin());
+
+                        req.set(key,value);
+                    }
+                }
+
+                if(!body.empty()){
+                    req.body() = body;
+                    req.prepare_payload();
+                }
+
+                beast::flat_buffer buffer;
+
+                http::write(ssl_sock, req, ec);
+                http::read(ssl_sock, buffer, res, ec);
+
+                if(ec){
+                    reconnect();
+                    continue;
+                }
             }
+
+            if(res.result_int() >= 400){
+                cout << "[HTTP] - ERROR: status >= 400: HTTP " + to_string(res.result_int()) + ": " + res.body();
+            }
+            
+            cout << "\n===== HTTP RESPONSE =====\n";
+            if(method != http::verb::get) cout << res << endl;
+
+            return res.body();
         }
-
-        if(!body.empty()){
-            req.body() = body;
-            req.prepare_payload();
-        }
-
-        beast::flat_buffer buffer;
-        beast::error_code ec;
-
-        http::write(ssl_sock, req, ec);
-        http::response<http::string_body> res;
-        http::read(ssl_sock, buffer, res, ec);
-
-        if(ec){
-            reconnect();
-            return "reconnect";
-        }
-
-        if(res.result_int() >= 400){
-            cout << "[HTTP] - ERROR: status >= 400: HTTP " + to_string(res.result_int()) + ": " + res.body();
-        }
-        
-        cout << "\n===== HTTP RESPONSE =====\n";
-        if(method != http::verb::get) cout << res << endl;
-
-        return res.body();
+        return "request failed";
     }
 };
 
@@ -753,7 +763,7 @@ public:
         stream.is_maker = o["m"].get<bool>();
 
         ExecutionEvent ev;
-        ev.type = ExecutionEventType::STREAM_UPDATE;
+        ev.type = ExecutionEventType::SPOT_STREAM_UPDATE;
         ev.stream = stream;
         execution_event.push(ev);
     }
@@ -877,7 +887,7 @@ public:
         stream.is_maker = o["m"].get<bool>();
 
         ExecutionEvent ev;
-        ev.type = ExecutionEventType::STREAM_UPDATE;
+        ev.type = ExecutionEventType::PERPS_STREAM_UPDATE;
         ev.stream = stream;
         execution_event.push(ev);
     }

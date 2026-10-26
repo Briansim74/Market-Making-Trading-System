@@ -150,16 +150,18 @@ struct EventNotifier {
     bool signal_pending = false;
 };
 
-enum class ExecutionEventType{
-    TRADE_UPDATE,
-    DEPTH_UPDATE_SPOT,
-    DEPTH_UPDATE_FUTURES,
-    STREAM_UPDATE,
+enum class ExecutionEventType {
+    SPOT_TRADE_UPDATE,
+    PERPS_TRADE_UPDATE,
+    SPOT_DEPTH_UPDATE,
+    PERPS_DEPTH_UPDATE,
+    SPOT_STREAM_UPDATE,
+    PERPS_STREAM_UPDATE,
     CANCEL_UPDATE,
     HYPERLIQUID_DEPTH_UPDATE
 };
 
-struct ExecutionEvent{
+struct ExecutionEvent {
     ExecutionEventType type;
     Trade trade;
     Depth depth;

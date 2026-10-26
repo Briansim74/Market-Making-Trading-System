@@ -439,7 +439,7 @@ public:
             recorder.log_event("trade", trade.ts, trade.local_ts, trade.latency, msg);
 
             ExecutionEvent ev;
-            ev.type = ExecutionEventType::TRADE_UPDATE;
+            ev.type = ExecutionEventType::SPOT_TRADE_UPDATE;
             ev.trade = trade;
             execution_event.push(ev);
         }
@@ -508,7 +508,7 @@ public:
             }
             
             ExecutionEvent ev;
-            ev.type = ExecutionEventType::DEPTH_UPDATE_SPOT;
+            ev.type = ExecutionEventType::SPOT_DEPTH_UPDATE;
             ev.depth = depth;
             execution_event.push(ev);
         }
@@ -709,7 +709,7 @@ public:
             recorder.log_event("trade", trade.ts, clock.now_ms(), trade.latency, msg);
 
             ExecutionEvent ev;
-            ev.type = ExecutionEventType::TRADE_UPDATE;
+            ev.type = ExecutionEventType::PERPS_TRADE_UPDATE;
             ev.trade = trade;
             execution_event.push(ev);
         }
@@ -779,7 +779,7 @@ public:
             }
 
             ExecutionEvent ev;
-            ev.type = ExecutionEventType::DEPTH_UPDATE_FUTURES;
+            ev.type = ExecutionEventType::PERPS_DEPTH_UPDATE;
             ev.depth = depth;
             execution_event.push(ev);
         }
@@ -1010,7 +1010,7 @@ public:
         recorder.log_event("trade", trade.ts, trade.local_ts, trade.latency, e.msg);
 
         ExecutionEvent ev;
-        ev.type = ExecutionEventType::TRADE_UPDATE;
+        ev.type = ExecutionEventType::SPOT_TRADE_UPDATE;
         ev.trade = trade;
         execution_event.push(ev);
     }
@@ -1048,7 +1048,7 @@ public:
         }
 
         ExecutionEvent ev;
-        ev.type = ExecutionEventType::DEPTH_UPDATE_SPOT;
+        ev.type = ExecutionEventType::SPOT_DEPTH_UPDATE;
         ev.depth = depth;
         execution_event.push(ev);
     }
@@ -1236,7 +1236,7 @@ public:
         recorder.log_event("trade", trade.ts, trade.local_ts, trade.latency, e.msg);
 
         ExecutionEvent ev;
-        ev.type = ExecutionEventType::TRADE_UPDATE;
+        ev.type = ExecutionEventType::PERPS_TRADE_UPDATE;
         ev.trade = trade;
         execution_event.push(ev);
     }
@@ -1275,7 +1275,7 @@ public:
         }
 
         ExecutionEvent ev;
-        ev.type = ExecutionEventType::DEPTH_UPDATE_FUTURES;
+        ev.type = ExecutionEventType::PERPS_DEPTH_UPDATE;
         ev.depth = depth;
         execution_event.push(ev);
     }
@@ -1533,7 +1533,7 @@ public:
                     recorder.log_event("trade", trade.ts, trade.local_ts, trade.latency, msg);
 
                     ExecutionEvent ev;
-                    ev.type = ExecutionEventType::TRADE_UPDATE;
+                    ev.type = ExecutionEventType::SPOT_TRADE_UPDATE;
                     ev.trade = trade;
                     execution_event.push(ev);
                 }

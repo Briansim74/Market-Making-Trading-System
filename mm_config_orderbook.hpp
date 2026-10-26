@@ -112,6 +112,8 @@ public:
     double maker_fee_rate;
     double taker_fee_rate;
 
+    double target_hedge_ratio; // NEW
+
     double tick_size = 0.0;
     double step_size = 0.0;
     size_t price_precision = 0;
@@ -155,6 +157,9 @@ public:
         micro_signal_model = params["models"]["micro_signal_model"].get<std_string>();
         residual_model = params["models"]["residual_model"].get<std_string>();
         toxicity_model = params["models"]["toxicity_model"].get<std_string>();
+
+
+        target_hedge_ratio = params["target_hedge_ratio"].get<double>();
 
         instrument = params["instrument"].get<std_string>();
         instrument_upper = instrument;
