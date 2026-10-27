@@ -90,6 +90,8 @@ public:
     MarketFeatureState mfs;
     optional<Signal> last_signal;
 
+    const std_string market;
+
     double last_mid = 0.0;
     double order_imbalance = 0.0;
     double trade_imbalance = 0.0;
@@ -125,9 +127,9 @@ public:
 
     bool initialized = false;
 
-    State(MarketConfig& config) : config(config), market_book(config)
+    State(MarketConfig& config, const std_string market) : config(config), market(market), market_book(config, market)
     {
-        cash = config.initial_cash;
+        cash = config.markets[market].initial_cash;
         inventory = config.initial_position;
     }
 
@@ -207,13 +209,14 @@ public:
     }
 
     void update_market_feature_state(){
+        
         auto& book = market_book;
-
+        
         auto [bid_tick, bid_size] = book.best_bid();
         auto [ask_tick, ask_size] = book.best_ask();
 
-        double best_bid = config.from_tick(bid_tick);
-        double best_ask = config.from_tick(ask_tick);
+        double best_bid = config.from_tick(bid_tick, market);
+        double best_ask = config.from_tick(ask_tick, market);
 
         double mid = (best_bid + best_ask) / 2.0;
         double spread = best_ask - best_bid;
@@ -273,8 +276,8 @@ public:
 
         if(bid_size <= 0 || ask_size <= 0) return;
 
-        double bid = config.from_tick(bid_tick);
-        double ask = config.from_tick(ask_tick);
+        double bid = config.from_tick(bid_tick, market);
+        double ask = config.from_tick(ask_tick, market);
 
         double mid = (bid + ask) / 2.0;
         double equity = cash + inventory * mid;
@@ -352,7 +355,7 @@ public:
         double old_avg = avg_entry_price;
 
         double fill_value = price * fill_qty;
-        double fee_rate = is_maker ? config.maker_fee_rate : config.taker_fee_rate;
+        double fee_rate = is_maker ? config.markets[market].maker_fee_rate : config.markets[market].taker_fee_rate;
         double fee = fill_value * fee_rate;
         fees_paid += fee;
         notional_traded += fill_value;

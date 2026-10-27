@@ -89,6 +89,7 @@ public:
     MarketConfig& config;
     State& state;
     const ordered_json& params;
+    const std_string market;
 
     vector<EventRow> events;
     vector<SnapshotRow> snapshots;
@@ -112,8 +113,8 @@ public:
     int fills_id = 0;
     int total_fills = 0;
 
-    DatasetRecorder(MarketConfig& config, State& state, const ordered_json& params)
-        : config(config), state(state), params(params) {initialize();}
+    DatasetRecorder(MarketConfig& config, State& state, const ordered_json& params, const std_string market)
+        : config(config), state(state), params(params), market(market) {initialize();}
 
     std_string build_file_path(const std_string& file, const int& file_id){
         ostringstream ss;
@@ -266,8 +267,8 @@ public:
 
         manifest["run_id"] = run_id;
         manifest["fees"] = {
-            {"maker_fee_rate", config.maker_fee_rate},
-            {"taker_fee_rate", config.taker_fee_rate}
+            {"maker_fee_rate", config.markets[market].maker_fee_rate},
+            {"taker_fee_rate", config.markets[market].taker_fee_rate}
         };
         manifest["folder_path"] = folder_path;
         manifest["performance"] = {
@@ -294,18 +295,18 @@ public:
         row.trade_latency = signal.trade_latency;
         row.depth_latency = signal.depth_latency;
         row.exchange_latency = signal.exchange_latency;
-        row.symbol = config.instrument_upper;
+        row.symbol = config.markets[market].instrument_upper;
 
         row.mid = signal.mid;
-        row.mid_tick = config.to_tick(signal.mid);
+        row.mid_tick = config.to_tick(signal.mid, market);
         row.microprice = signal.microprice;
         row.microprice_dev = signal.microprice_dev;
         row.spread = signal.spread;
 
         row.best_bid = signal.best_bid;
         row.best_ask = signal.best_ask;
-        row.best_bid_tick = config.to_tick(signal.best_bid);
-        row.best_ask_tick = config.to_tick(signal.best_ask);
+        row.best_bid_tick = config.to_tick(signal.best_bid, market);
+        row.best_ask_tick = config.to_tick(signal.best_ask, market);
 
         row.order_imbalance = signal.order_imbalance;
         row.trade_imbalance = signal.trade_imbalance;
@@ -343,8 +344,8 @@ public:
 
         row.my_bid = signal.my_bid;
         row.my_ask = signal.my_ask;
-        row.my_bid_tick = config.to_tick(signal.my_bid);
-        row.my_ask_tick = config.to_tick(signal.my_ask);
+        row.my_bid_tick = config.to_tick(signal.my_bid, market);
+        row.my_ask_tick = config.to_tick(signal.my_ask, market);
 
         row.bid_distance_touch = signal.my_bid - signal.best_bid;
         row.ask_distance_touch = signal.my_ask - signal.best_ask;
@@ -696,8 +697,8 @@ public:
         auto [bid_tick, bid_size] = book.best_bid();
         auto [ask_tick, ask_size] = book.best_ask();
 
-        double best_bid = config.from_tick(bid_tick);
-        double best_ask = config.from_tick(ask_tick);
+        double best_bid = config.from_tick(bid_tick, market);
+        double best_ask = config.from_tick(ask_tick, market);
 
         double mid = (best_bid + best_ask) / 2.0;
         double microprice = (best_ask * bid_size + best_bid * ask_size) / (bid_size + ask_size + 1e-9);
@@ -705,10 +706,10 @@ public:
         double notional = trade.price * trade.qty;
 
         row.ts = trade.ts;
-        row.symbol = config.instrument_upper;
+        row.symbol = config.markets[market].instrument_upper;
 
         row.price = trade.price;
-        row.price_tick = config.to_tick(trade.price);
+        row.price_tick = config.to_tick(trade.price, market);
         row.qty = trade.qty;
         row.side = trade.side;
         row.is_buyer_maker = (trade.side == "SELL") ? true : false;
@@ -938,11 +939,11 @@ public:
     void log_quote(const Order& order, const std_string& side, const std_string& event_type){
         QuoteRow row;
 
-        double price = config.from_tick(order.price_tick);
+        double price = config.from_tick(order.price_tick, market);
 
         row.ts = order.ts;
         row.exchange_latency = order.exchange_latency;
-        row.symbol = config.instrument_upper;
+        row.symbol = config.markets[market].instrument_upper;
         row.client_oid = order.client_oid;
         row.side = side;
         row.event_type = event_type;
@@ -957,8 +958,8 @@ public:
         row.spread = order.signal.spread;
         row.best_bid = order.signal.best_bid;
         row.best_ask = order.signal.best_ask;
-        row.best_bid_tick = config.to_tick(order.signal.best_bid);
-        row.best_ask_tick = config.to_tick(order.signal.best_ask);
+        row.best_bid_tick = config.to_tick(order.signal.best_bid, market);
+        row.best_ask_tick = config.to_tick(order.signal.best_ask, market);
         
         row.order_imbalance = order.signal.order_imbalance;
         row.trade_imbalance = order.signal.trade_imbalance;
@@ -1281,8 +1282,8 @@ public:
         auto [bid_tick, bid_size] = book.best_bid();
         auto [ask_tick, ask_size] = book.best_ask();
 
-        double best_bid = config.from_tick(bid_tick);
-        double best_ask = config.from_tick(ask_tick);
+        double best_bid = config.from_tick(bid_tick, market);
+        double best_ask = config.from_tick(ask_tick, market);
 
         double mid = (best_bid + best_ask) / 2.0;
         double microprice = (best_ask * bid_size + best_bid * ask_size) / (bid_size + ask_size + 1e-9);
@@ -1292,9 +1293,9 @@ public:
         row.ts = state.last_trade_ts;
         row.exchange_latency = order.exchange_latency;
         row.time_to_fill = fill_ts - order.live_ts;
-        row.symbol = config.instrument_upper;
+        row.symbol = config.markets[market].instrument_upper;
         row.side = order.side;
-        row.price = config.from_tick(order.price_tick);
+        row.price = config.from_tick(order.price_tick, market);
         row.price_tick = order.price_tick;
         row.qty = fill_qty;
         row.cum_qty = order.qty - order.remaining;
@@ -1320,8 +1321,8 @@ public:
         row.spread = order.signal.spread;
         row.best_bid = order.signal.best_bid;
         row.best_ask = order.signal.best_ask;
-        row.best_bid_tick = config.to_tick(order.signal.best_bid);
-        row.best_ask_tick = config.to_tick(order.signal.best_ask);
+        row.best_bid_tick = config.to_tick(order.signal.best_bid, market);
+        row.best_ask_tick = config.to_tick(order.signal.best_ask, market);
 
         row.order_imbalance = order.signal.order_imbalance;
         row.trade_imbalance = order.signal.trade_imbalance;
@@ -1354,8 +1355,8 @@ public:
 
         row.my_bid = order.signal.my_bid;
         row.my_ask = order.signal.my_ask;
-        row.my_bid_tick = config.to_tick(order.signal.my_bid);
-        row.my_ask_tick = config.to_tick(order.signal.my_ask);
+        row.my_bid_tick = config.to_tick(order.signal.my_bid, market);
+        row.my_ask_tick = config.to_tick(order.signal.my_ask, market);
         
         row.bid_distance_touch = order.signal.my_bid - best_bid;
         row.ask_distance_touch = order.signal.my_ask - best_ask;

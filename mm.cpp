@@ -149,7 +149,7 @@ public:
                 break;
             
             case ExecutionEventType::PERPS_DEPTH_UPDATE:
-                on_depth_event_futures(ev.depth);
+                on_depth_event_perps(ev.depth);
                 break;
 
             case ExecutionEventType::SPOT_STREAM_UPDATE:
@@ -157,7 +157,7 @@ public:
                 break;
 
             case ExecutionEventType::PERPS_STREAM_UPDATE:
-                on_stream_event_perps(ev.stream);
+                on_stream_event_perp(ev.stream);
                 break;
 
             case ExecutionEventType::CANCEL_UPDATE:
@@ -194,7 +194,7 @@ public:
                 break;
             
             case ExecutionEventType::PERPS_DEPTH_UPDATE:
-                on_depth_event_futures_latency(ev.depth);
+                on_depth_event_perps_latency(ev.depth);
                 break;
 
             case ExecutionEventType::CANCEL_UPDATE:
@@ -204,6 +204,7 @@ public:
     }
 
     void on_trade_event_spot(const Trade& trade){
+
         spot_state.time = trade.local_ts;
         spot_state.last_trade = trade;
         spot_state.last_trade_ts = trade.ts;
@@ -211,9 +212,11 @@ public:
 
         spot_recorder.log_trade(trade);
         spot_execution.process_trade(trade);
+        cout << "on trade spot1\n";
     }
 
     void on_trade_event_perps(const Trade& trade){
+
         perps_state.time = trade.local_ts;
         perps_state.last_trade = trade;
         perps_state.last_trade_ts = trade.ts;
@@ -221,6 +224,7 @@ public:
 
         perps_recorder.log_trade(trade);
         perps_execution.process_trade(trade);
+        cout << "on trade perp1\n";
     }
 
     void on_depth_event_spot(const Depth& depth){
@@ -271,21 +275,22 @@ public:
 
         Signal signal = strategy.generate_quotes(spot_state);
         spot_recorder.log_snapshot(signal);
+        cout << "ondepth spot1\n";
         spot_state.last_signal = signal;
-
+        cout << "ondepth spot2\n";
         if(config.market != "spot" || !trading_enabled) return; // to be changed if shift to error style
-
+        cout << "ondepth spot3\n";
         spot_execution.place_quotes(signal);
     }
 
-    void on_depth_event_futures(const Depth& depth){
+    void on_depth_event_perps(const Depth& depth){
         // -------------------------
         // LIVE PROCESSING
         // -------------------------
         perps_state.time = depth.local_ts;
         perps_state.last_depth_ts = depth.ts;
         perps_state.depth_latency = depth.latency;
-        
+
         auto& book = perps_state.market_book;
 
         // -----------------------------
@@ -323,14 +328,15 @@ public:
         // STRATEGY ONLY AFTER INIT
         // -----------------------------
         if(!perps_state.initialized) return;
-
+        
         Signal signal = strategy.generate_quotes(perps_state);
         perps_recorder.log_snapshot(signal);
         perps_state.last_signal = signal;
-
-        if(config.market != "perps" || !trading_enabled) return;
-
+        cout << "on depth perp0\n";
+        if(config.market == "spot" || !trading_enabled) return; // for hedging
+        cout << "on depth perp1\n";
         perps_execution.place_quotes(signal);
+        cout << "on depth perp2\n";
     }
 
     void on_depth_event_spot_latency(const Depth& depth){
@@ -388,7 +394,7 @@ public:
         spot_execution.place_quotes_latency(signal);
     }
 
-    void on_depth_event_futures_latency(const Depth& depth){
+    void on_depth_event_perps_latency(const Depth& depth){
         // -------------------------
         // LIVE PROCESSING
         // -------------------------
@@ -438,7 +444,7 @@ public:
         perps_recorder.log_snapshot(signal);
         perps_state.last_signal = signal;
 
-        if(config.market != "perps" || !trading_enabled) return;
+        if(config.market == "spot" || !trading_enabled) return;
 
         perps_execution.place_quotes_latency(signal);
     }
@@ -452,7 +458,7 @@ public:
         
         if(!trading_enabled) return;
 
-        if(config.market == "perps"){
+        if(config.market != "spot"){
             // HedgeSignal hedge_signal = strategy.calculate_hedge(state);
             // execution.place_hedge(hedge_signal);
             // cout << "yes";
@@ -461,7 +467,7 @@ public:
         else spot_execution.place_quotes(*spot_state.last_signal);
     }
 
-    void on_stream_event_perps(const Stream& stream){
+    void on_stream_event_perp(const Stream& stream){
         perps_state.time = stream.local_ts;
         perps_execution.apply_stream_update(stream);
 
@@ -471,7 +477,7 @@ public:
         if(!trading_enabled) return;
 
         if(config.market == "spot"){
-            // HedgeSignal hedge_signal = strategy.calculate_hedge(state);
+            HedgeSignal hedge_signal = strategy.calculate_hedge(*spot_state.last_signal, perps_state);
             // execution.place_hedge(hedge_signal);
             // cout << "yes";
         }
@@ -537,6 +543,10 @@ public:
 
     void on_cancel_event(){
         cout << "CANCELLING OPEN ORDERS\n";
+        if(spot_execution == nullptr) cout << "yes spot cancel\n";
+        if(spot_execution.enabled() == true) cout << "yes spot cancel\n";
+        if(perps_execution.enabled() == true) cout << "yes perps cancel\n";
+        cout << "CANCELLING OPEN ORDERS1.1\n";
         spot_execution.cancel_all_orders(); // to be changed to spot + perps
         waiting_for_cancel = true;
         if(config.mode == "stochastic" || config.mode == "replay"){
@@ -604,12 +614,12 @@ public:
 
     std_string orderPointerToString(Order* order){
         return order ? format("{:<5} | {:>10.10f} | {:>8.6f} [{}]", 
-            order->side, config.from_tick(order->price_tick), order->remaining, order->status) : "—";
+            order->side, config.from_tick(order->price_tick, config.market), order->remaining, order->status) : "—";
     }
 
     std_string orderOptionalToString(const optional<Order>& order){
         return order ? format("{:<5} | {:>10.10f} | {:>8.6f} [{}]", 
-            order->side, config.from_tick(order->price_tick), order->remaining, order->status) : "—";
+            order->side, config.from_tick(order->price_tick, config.market), order->remaining, order->status) : "—";
     }
 
     Snapshot build_snapshot(){
@@ -626,8 +636,8 @@ public:
         auto [bid_tick, bid_size] = book.best_bid();
         auto [ask_tick, ask_size] = book.best_ask();
 
-        double best_bid = config.from_tick(bid_tick);
-        double best_ask = config.from_tick(ask_tick);
+        double best_bid = config.from_tick(bid_tick, config.market);
+        double best_ask = config.from_tick(ask_tick, config.market);
 
         double mid = (best_bid + best_ask) / 2.0;
         double spread = best_ask - best_bid;
@@ -638,7 +648,7 @@ public:
 
         snap.title.header = header;
         snap.title.regime = maker_state.last_signal ? maker_state.last_signal->regime : "";
-        snap.title.pnl_pct = maker_state.get_pnl(mid) / config.initial_cash * 100;
+        snap.title.pnl_pct = maker_state.get_pnl(mid) / config.markets[config.market].initial_cash * 100;
 
         snap.market.mid = mid;
         snap.market.microprice = microprice;
@@ -697,7 +707,7 @@ public:
         snap.system.trade_latency = maker_state.trade_latency;
         snap.system.depth_latency = maker_state.depth_latency;
         snap.system.exchange_latency = maker_state.exchange_latency;
-
+        cout << "snap done\n";
         return snap;
     }
 
@@ -717,7 +727,7 @@ public:
         add(config.toxicity_model);
         add(config.mode);
         add(config.exchange + "_" + config.market);
-        add(config.instrument);
+        add(config.markets[config.market].instrument);
 
         header = parts;
     }
@@ -725,22 +735,6 @@ public:
 
 class TradingSystem {
 public:
-
-//     struct TradingSystem {
-//     SpotState spot_state;
-//     PerpState perp_state;
-
-//     PortfolioState portfolio_state;
-//     HedgeController hedge_controller;
-
-//     unique_ptr<SpotBroker> spot_broker;
-//     unique_ptr<PerpBroker> perp_broker;
-
-//     unique_ptr<SpotExecution> spot_execution;
-//     unique_ptr<PerpExecution> perp_execution;
-// };
-
-
     const ordered_json& params;
     MarketConfig config;
 
@@ -758,21 +752,16 @@ public:
     DashboardTerminal dashboard_terminal;
     DashboardServer dashboard_server;
 
-    // Strategy roles
-    // unique_ptr<Execution> execution;
     unique_ptr<Execution> spot_execution;
     unique_ptr<Execution> perps_execution;
 
-    // unique_ptr<BinanceBroker> broker;
     unique_ptr<BinanceBroker> spot_broker;
     unique_ptr<BinanceBroker> perps_broker;
-    // unique_ptr<BinanceUserStream> user_stream;
 
     unique_ptr<BinanceUserStream> spot_user_stream;
     unique_ptr<BinanceUserStream> perps_user_stream;
 
     unique_ptr<Engine> engine;
-    // unique_ptr<Feed> feed;
     unique_ptr<Feed> spot_feed;
     unique_ptr<Feed> perps_feed;
 
@@ -788,49 +777,63 @@ public:
     vector<thread> threads;
 
     TradingSystem(const ordered_json& params) :
-        params(params), config(params), spot_state(config), perps_state(config), 
-        
-        strategy(config), spot_recorder(config, spot_state, params), perps_recorder(config, perps_state, params),
+        params(params), config(params), spot_state(config, "spot"), perps_state(config, (config.mode == "testnet") ? "testnet_perps" : "perps"),
+        strategy(config), spot_recorder(config, spot_state, params, "spot"), perps_recorder(config, perps_state, params, "perps"),
         clock(config), dashboard_terminal(snapshot_store), dashboard_server(config, snapshot_store),
         signals(ioc, SIGINT, SIGTERM) {initialize();}
 
     void initialize(){
-        if(config.mode == "live" && config.market == "spot" && config.instrument == "pepeusdt"){
+        if(config.mode == "live" && config.market == "spot"){
             spot_broker = make_unique<BinanceSpotBroker>(config, clock);
-            spot_execution = make_unique<LiveExecution>(config, spot_state, spot_recorder, *spot_broker, clock);
+            spot_execution = make_unique<LiveExecution>(config, spot_state, spot_recorder, *spot_broker, clock, "spot");
             spot_user_stream = make_unique<BinanceSpotUserStream>(config, *spot_broker, execution_event, clock);
-            
+
             if(config.target_hedge_ratio > 0.0){
-                perps_broker = make_unique<BinanceFuturesBroker>(config, clock);
-                perps_execution = make_unique<LiveExecution>(config, perps_state, perps_recorder, *perps_broker, clock);
-                perps_user_stream = make_unique<BinanceFuturesUserStream>(config, *perps_broker, execution_event, clock);
+                perps_broker = make_unique<BinancePerpsBroker>(config, clock, "perps");
+                perps_execution = make_unique<LiveExecution>(config, perps_state, perps_recorder, *perps_broker, clock, "perps"); // TO CHANGE TO USE TERNARY FOR CONFIG MODE FOR PERPS AND TESTNET PERPS
+                perps_user_stream = make_unique<BinancePerpsUserStream>(config, *perps_broker, execution_event, clock, "perps");
             }
+            cout << "init4\n";
         }
 
-        else if((config.mode == "testnet" || config.mode == "live") && config.market == "futures"){
-            perps_broker = make_unique<BinanceFuturesBroker>(config, clock);
-            perps_execution = make_unique<LiveExecution>(config, perps_state, perps_recorder, *perps_broker, clock);
-            perps_user_stream = make_unique<BinanceFuturesUserStream>(config, *perps_broker, execution_event, clock);
+        else if(config.mode == "live" && config.market == "perps"){
+            perps_broker = make_unique<BinancePerpsBroker>(config, clock, "perps");
+            perps_execution = make_unique<LiveExecution>(config, perps_state, perps_recorder, *perps_broker, clock, "perps");
+            perps_user_stream = make_unique<BinancePerpsUserStream>(config, *perps_broker, execution_event, clock, "perps");
+        }
+
+        else if((config.mode == "testnet" || config.mode == "live") && config.market == "testnet_perps"){
+            perps_broker = make_unique<BinancePerpsBroker>(config, clock, "testnet_perps");
+            perps_execution = make_unique<LiveExecution>(config, perps_state, perps_recorder, *perps_broker, clock, "testnet_perps");
+            perps_user_stream = make_unique<BinancePerpsUserStream>(config, *perps_broker, execution_event, clock, "testnet_perps");
         }
         
-        else if(config.mode != "live"){
-            spot_execution = make_unique<PaperExecution>(config, spot_state, spot_recorder, clock);
+        else if(config.mode != "live" && config.market == "spot"){
+            spot_execution = make_unique<PaperExecution>(config, spot_state, spot_recorder, clock, "spot");
+        }
+
+        else if(config.mode != "live" && config.market == "testnet_perps"){
+            perps_execution = make_unique<PaperExecution>(config, spot_state, spot_recorder, clock, "spot");
         }
 
         if(config.exchange == "binance" && config.market == "spot" && config.mode != "replay"){
             spot_feed = make_unique<BinanceSpotFeed>(config, spot_state, execution_event, spot_recorder, clock);
         }
 
-        else if(config.exchange == "binance" && config.market == "futures" && config.mode != "replay"){
-            perps_feed = make_unique<BinanceFuturesFeed>(config, perps_state, execution_event, perps_recorder, clock);
+        else if(config.exchange == "binance" && config.market == "perps" && config.mode != "replay"){
+            perps_feed = make_unique<BinancePerpsFeed>(config, perps_state, execution_event, perps_recorder, clock, "perps");
+        }
+
+        else if(config.exchange == "binance" && config.market == "testnet_perps" && config.mode != "replay"){
+            perps_feed = make_unique<BinancePerpsFeed>(config, perps_state, execution_event, perps_recorder, clock, "testnet_perps");
         }
 
         else if(config.exchange == "binance" && config.market == "spot" && config.mode == "replay"){
             spot_feed = make_unique<BinanceSpotReplayFeed>(config, spot_state, execution_event, spot_recorder, clock);
         }
 
-        else if(config.exchange == "binance" && config.market == "futures" && config.mode == "replay"){
-            perps_feed = make_unique<BinanceFuturesReplayFeed>(config, perps_state, execution_event, perps_recorder, clock);
+        else if(config.exchange == "binance" && config.market == "testnet_perps" && config.mode == "replay"){
+            perps_feed = make_unique<BinancePerpsReplayFeed>(config, perps_state, execution_event, perps_recorder, clock, "testnet_perps");
         }
 
         else if(config.exchange == "polymarket"){
@@ -841,23 +844,8 @@ public:
             spot_feed = make_unique<HyperLiquidFeed>(config, spot_state, execution_event, spot_recorder, clock);
         }
 
-
-        // Engine(MarketConfig& config, State& state, MarketMakingStrategy& strategy, Execution& maker_execution, Execution& hedge_execution, 
-        
-        
-        // BinanceClock& clock,
-        // ExecutionEventQueue& execution_event, EventNotifier& dashboard_event, SnapshotStore& snapshot_store, 
-        
-        // DatasetRecorder& maker_recorder, DatasetRecorder& hedge_recorder)
-        // : config(config), state(state), strategy(strategy), maker_execution(maker_execution), hedge_execution(hedge_execution), 
-        
-        // clock(clock), execution_event(execution_event),
-        // dashboard_event(dashboard_event), snapshot_store(snapshot_store), maker_recorder(maker_recorder), hedge_recorder(hedge_recorder) {build_header();}
-
         engine = make_unique<Engine>(config, spot_state, perps_state, strategy, *spot_execution, *perps_execution, 
-            
-            
-            clock, execution_event, dashboard_event, snapshot_store, spot_recorder, perps_recorder);
+                                    clock, execution_event, dashboard_event, snapshot_store, spot_recorder, perps_recorder);
     }
 
     void start(){

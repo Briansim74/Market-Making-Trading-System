@@ -458,8 +458,8 @@ public:
         auto [bid_tick, bid_size] = book.best_bid();
         auto [ask_tick, ask_size] = book.best_ask();
 
-        double best_bid = config.from_tick(bid_tick);
-        double best_ask = config.from_tick(ask_tick);
+        double best_bid = config.from_tick(bid_tick, config.market);
+        double best_ask = config.from_tick(ask_tick, config.market);
 
         double mid = (best_bid + best_ask) / 2.0;
         double microprice = (best_ask * bid_size + best_bid * ask_size) / (bid_size + ask_size + 1e-9);
@@ -698,7 +698,7 @@ public:
         double vol_component = 3.0 * features.volatility * features.mid; // added dimension change to mid price
         double raw_spread = max(features.spread, vol_component);
 
-        double spread = config.base_spread * features.spread * policy.spread_multiplier * (1.0 + toxicity.k_spread * toxicity.tox);
+        double spread = config.markets[config.market].base_spread * features.spread * policy.spread_multiplier * (1.0 + toxicity.k_spread * toxicity.tox);
 
         return spread;
     }
@@ -709,12 +709,12 @@ public:
     Signal generate_quotes(State& state){ // put execution here in the mean time
 
         auto& book = state.market_book;
-
+        
         auto [bid_tick, bid_size] = book.best_bid();
         auto [ask_tick, ask_size] = book.best_ask();
 
-        double best_bid = config.from_tick(bid_tick);
-        double best_ask = config.from_tick(ask_tick);
+        double best_bid = config.from_tick(bid_tick, config.market);
+        double best_ask = config.from_tick(ask_tick, config.market);
 
         double mid = (best_bid + best_ask) / 2.0;
 
@@ -755,18 +755,18 @@ public:
         
         double bid = center - half;
         double ask = center + half;
-        double tick = config.tick_size;
+        double tick = config.markets[config.market].tick_size;
 
         bid = min(bid, best_bid);
         ask = max(ask, best_ask);
-        
+
         if(bid >= ask){
             bid = best_bid - tick;
             ask = best_ask + tick;
         }
 
-        bid = config.normalize_bid(bid);
-        ask = config.normalize_ask(ask);
+        bid = config.normalize_bid(bid, config.market);
+        ask = config.normalize_ask(ask, config.market);
 
         double bid_delta = abs(best_bid - state.mfs.prev_best_bid);
         double ask_delta = abs(best_ask - state.mfs.prev_best_ask);
@@ -824,5 +824,10 @@ public:
         signal.my_ask = ask;
 
         return signal;
+    }
+
+    HedgeSignal calculate_hedge(Signal& signal, State& hedge_state){
+        HedgeSignal hedge;
+        return hedge;
     }
 };

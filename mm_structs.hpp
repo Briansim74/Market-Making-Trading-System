@@ -144,6 +144,36 @@ struct Hawkes {
     }
 };
 
+struct InstrumentConfig {
+    std_string instrument;
+    std_string instrument_upper;
+
+    double base_spread;
+    double base_size;
+    double initial_cash;
+
+    double maker_fee_rate;
+    double taker_fee_rate;
+
+    double tick_size = 0.0;
+    double step_size = 0.0;
+    size_t price_precision = 0;
+    size_t qty_precision = 0;
+
+    double min_qty = 0.0;
+    double max_qty = 0.0;
+    double min_notional = 0.0;
+    bool apply_min_market = false;
+
+    std_string hostname;
+    std_string base_url;
+    std_string endpoint;
+};
+
+struct HedgeSignal {
+    int i = 0;
+};
+
 struct EventNotifier {
     mutex signal_mtx;
     condition_variable signal_cv;

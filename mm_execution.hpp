@@ -111,6 +111,8 @@ public:
     DatasetRecorder& recorder;
     BinanceClock& clock;
 
+    const std_string market;
+
     unordered_map<std_string, Order> open_orders;
 
     double current_bid_size = 0.0;
@@ -124,8 +126,8 @@ public:
 
     priority_queue<LatencyEvent, vector<LatencyEvent>, Compare> latency_queue;
 
-    PaperExecution(MarketConfig& config, State& state, DatasetRecorder& recorder, BinanceClock& clock)
-        : config(config), state(state), recorder(recorder), clock(clock)
+    PaperExecution(MarketConfig& config, State& state, DatasetRecorder& recorder, BinanceClock& clock, const std_string market)
+        : config(config), state(state), recorder(recorder), clock(clock), market(market)
     {
         state.exchange_latency = config.exchange_latency;
         
@@ -218,12 +220,12 @@ public:
         double toxicity_penalty = exp(-signal.toxicity.k_order_size * signal.toxicity.tox); //negative markout translates into positive exp
 
         // Size is USDT notional.
-        double size_usdt = config.base_size * vol_penalty * risk_penalty * toxicity_penalty;
+        double size_usdt = config.markets[market].base_size * vol_penalty * risk_penalty * toxicity_penalty;
 
-        // if(size_usdt < 0.5 * config.base_size) return {0.0, 0.0}; // risk guard to prevent toxic order size
+        // if(size_usdt < 0.5 * config.markets[market].base_size) return {0.0, 0.0}; // risk guard to prevent toxic order size
 
         // Exchange minimum is 1 USDT.
-        size_usdt = max(config.base_size, min(size_usdt, 1.5 * config.base_size)); // max 1.5 base size usdt per order
+        size_usdt = max(config.markets[market].base_size, min(size_usdt, 1.5 * config.markets[market].base_size)); // max 1.5 base size usdt per order
 
         double bid_size_usdt = size_usdt * bid_multiplier;
         double ask_size_usdt = size_usdt * ask_multiplier;
@@ -240,12 +242,12 @@ public:
         double ask_size = ask_size_usdt / signal.mid;
 
         // exchange LOT_SIZE normalization
-        bid_size = config.normalize_qty(bid_size);
-        ask_size = config.normalize_qty(ask_size);
+        bid_size = config.normalize_qty(bid_size, market);
+        ask_size = config.normalize_qty(ask_size, market);
 
         // Re-check actual notional AFTER normalization.
-        if(bid_size_usdt < config.base_size) bid_size = 0.0;
-        if(ask_size_usdt < config.base_size) ask_size = 0.0;
+        if(bid_size_usdt < config.markets[market].base_size) bid_size = 0.0;
+        if(ask_size_usdt < config.markets[market].base_size) ask_size = 0.0;
 
         return {bid_size, ask_size};
     }
@@ -266,7 +268,7 @@ public:
     void place_limit(const std_string& side, const double& price, const double& size, const Signal& signal){
 
         std_string client_oid = "MM-" + uuid16();
-        int64_t price_tick = config.to_tick(price);
+        int64_t price_tick = config.to_tick(price, market);
         int64_t ts = clock.now_ms();
 
         Order& order = open_orders[client_oid]; // <-- insert into map
@@ -354,7 +356,7 @@ public:
         double desired_ask = signal.my_ask;
 
         auto [bid_size, ask_size] = compute_order_size(signal);
-        double tick = config.tick_size;
+        double tick = config.markets[market].tick_size;
 
         Order* bid_order = get_open_order("BUY");
         Order* ask_order = get_open_order("SELL");
@@ -373,7 +375,7 @@ public:
         }
         
         // if bid change
-        else if(abs(desired_bid - config.from_tick(bid_order->price_tick)) >= tick && !bid_order->pending_cancel &&
+        else if(abs(desired_bid - config.from_tick(bid_order->price_tick, market)) >= tick && !bid_order->pending_cancel &&
             (bid_order->status == "LIVE" || bid_order->status == "PARTIALLY_FILLED")){
             cancel_order(bid_order);
 
@@ -394,7 +396,7 @@ public:
         }
 
         // else if ask change
-        else if(abs(desired_ask - config.from_tick(ask_order->price_tick)) >= tick && !ask_order->pending_cancel &&
+        else if(abs(desired_ask - config.from_tick(ask_order->price_tick, market)) >= tick && !ask_order->pending_cancel &&
             (ask_order->status == "LIVE" || ask_order->status == "PARTIALLY_FILLED")){
             cancel_order(ask_order);
 
@@ -408,7 +410,7 @@ public:
     void match_side(const Trade& trade){
 
         std_string side = (trade.side == "BUY") ? "SELL" : "BUY";
-        int64_t price_tick = config.to_tick(trade.price);
+        int64_t price_tick = config.to_tick(trade.price, market);
 
         Order* order = get_fill_candidate_order(side, price_tick);
 
@@ -498,7 +500,7 @@ public:
                 if(order->remaining > 0.0) order->status = "PARTIALLY_FILLED";
                 else order->status = "FILLED";
 
-                state.on_fill(config.from_tick(it->first), fill_qty, "BUY", false);
+                state.on_fill(config.from_tick(it->first, market), fill_qty, "BUY", false);
 
                 state.last_fill_candidate = *order;
                 state.last_order_update = *order;
@@ -521,7 +523,7 @@ public:
                 if(order->remaining > 0.0) order->status = "PARTIALLY_FILLED";
                 else order->status = "FILLED";
 
-                state.on_fill(config.from_tick(it->first), fill_qty, "SELL", false);
+                state.on_fill(config.from_tick(it->first, market), fill_qty, "SELL", false);
 
                 state.last_fill_candidate = *order;
                 state.last_order_update = *order;
@@ -547,6 +549,8 @@ public:
     BinanceBroker& broker;
     BinanceClock& clock;
 
+    const std_string market;
+
     unordered_map<std_string, Order> open_orders;
 
     double current_bid_size = 0.0;
@@ -555,8 +559,8 @@ public:
     double last_bid = 0.0;
     double last_ask = 0.0;
 
-    LiveExecution(MarketConfig& config, State& state, DatasetRecorder& recorder, BinanceBroker& broker, BinanceClock& clock)
-        : config(config), state(state), recorder(recorder), broker(broker), clock(clock) {}
+    LiveExecution(MarketConfig& config, State& state, DatasetRecorder& recorder, BinanceBroker& broker, BinanceClock& clock, const std_string market)
+        : config(config), state(state), recorder(recorder), broker(broker), clock(clock), market(market) {}
 
     double get_last_bid() override {
         return last_bid;
@@ -589,18 +593,18 @@ public:
     }
 
     void process_trade(const Trade& trade) override {
-        
+
         update_trade_flow(trade);
 
         // state.hawkes.update(depletion, entry.ts); // hawkes process
 
         std_string side = (trade.side == "BUY") ? "SELL" : "BUY";
-        int64_t price_tick = config.to_tick(trade.price);
+        int64_t price_tick = config.to_tick(trade.price, market);
 
         Order* order = get_fill_candidate_order(side, price_tick);
 
         if(!order) return;
-
+        cout << "process2\n";
         state.last_fill_candidate = *order;
     }
 
@@ -630,12 +634,12 @@ public:
         double toxicity_penalty = exp(-signal.toxicity.k_order_size * signal.toxicity.tox); //negative markout translates into positive exp
 
         // Size is USDT notional.
-        double size_usdt = config.base_size * vol_penalty * risk_penalty * toxicity_penalty;
+        double size_usdt = config.markets[market].base_size * vol_penalty * risk_penalty * toxicity_penalty;
 
-        // if(size_usdt < 0.5 * config.base_size) return {0.0, 0.0}; // risk guard to prevent toxic order size
+        // if(size_usdt < 0.5 * config.markets[market].base_size) return {0.0, 0.0}; // risk guard to prevent toxic order size
 
         // Exchange minimum is 1 USDT.
-        size_usdt = max(config.base_size, min(size_usdt, 1.5 * config.base_size)); // max 1.5 base size usdt per order
+        size_usdt = max(config.markets[market].base_size, min(size_usdt, 1.5 * config.markets[market].base_size)); // max 1.5 base size usdt per order
 
         double bid_size_usdt = size_usdt * bid_multiplier;
         double ask_size_usdt = size_usdt * ask_multiplier;
@@ -652,12 +656,12 @@ public:
         double ask_size = ask_size_usdt / signal.mid;
 
         // exchange LOT_SIZE normalization
-        bid_size = config.normalize_qty(bid_size);
-        ask_size = config.normalize_qty(ask_size);
+        bid_size = config.normalize_qty(bid_size, market);
+        ask_size = config.normalize_qty(ask_size, market);
 
         // Re-check actual notional AFTER normalization.
-        if(bid_size_usdt < config.base_size) bid_size = 0.0;
-        if(ask_size_usdt < config.base_size) ask_size = 0.0;
+        if(bid_size_usdt < config.markets[market].base_size) bid_size = 0.0;
+        if(ask_size_usdt < config.markets[market].base_size) ask_size = 0.0;
 
         // cout << "bid_size: " << bid_size << "\n";
         // cout << "ask_size: " << ask_size << "\n";
@@ -681,7 +685,7 @@ public:
     void place_limit(const std_string& side, const double& price, const double& size, const Signal& signal){
 
         std_string client_oid = "MM-" + uuid16();
-        int64_t price_tick = config.to_tick(price);
+        int64_t price_tick = config.to_tick(price, market);
 
         Order& order = open_orders[client_oid]; // <-- insert into map
 
@@ -702,17 +706,7 @@ public:
         order.resp = resp;
 
         if(resp.contains("code")){
-            int code = resp["code"];
-
-            if(code == -4003){
-                cout << "[BROKER] - Limit order rejected: Quantity less than or equal to zero.\n";
-            }
-
-            else if(code == -4164){
-                cout << "[BROKER] - Order's notional must be no smaller than 50 (unless you choose reduce only).\n";
-            }
-            // other exchange errors
-            else cout << "[BROKER] - Limit order failed: " << resp.dump() << "\n";
+            cout << "[BROKER] - ERROR: " << resp["msg"].get<std_string>() << "\n";
 
             order.ts = clock.now_ms();
             order.status = "REJECTED";
@@ -735,8 +729,8 @@ public:
         auto [bid_tick, bid_size] = book.best_bid();
         auto [ask_tick, ask_size] = book.best_ask();
 
-        double best_bid = config.from_tick(bid_tick);
-        double best_ask = config.from_tick(ask_tick);
+        double best_bid = config.from_tick(bid_tick, market);
+        double best_ask = config.from_tick(ask_tick, market);
 
         double mid = (best_bid + best_ask) / 2.0;
 
@@ -781,17 +775,7 @@ public:
         order.resp = resp;
 
         if(resp.contains("code")){
-            int code = resp["code"];
-
-            if(code == -4003){
-                cout << "Market order rejected: Quantity less than or equal to zero.\n";
-            }
-
-            else if(code == -4164){
-                cout << "Order's notional must be no smaller than 50 (unless you choose reduce only).\n";
-            }
-            // other exchange errors
-            else cout << "Market order failed: " << resp.dump() << "\n";
+            cout << "[BROKER] - ERROR: " << resp["msg"].get<std_string>() << "\n";
 
             order.ts = clock.now_ms();
             order.status = "REJECTED";
@@ -816,14 +800,7 @@ public:
         order->resp = resp;
 
         if(resp.contains("code")){
-            int code = resp["code"];
-
-            if(code == -2011){ // Order already filled/canceled
-                cout << "[BROKER] - Cancel rejected: order no longer open\n";
-            }
-            // other exchange errors
-            else cout << "[BROKER] - Cancel failed: " << resp.dump() << "\n";
-            return;
+            cout << "[BROKER] - ERROR: " << resp["msg"].get<std_string>() << "\n";
         }
 
         recorder.log_quote(*order, (order->side == "BUY") ? "BID" : "ASK", "CANCEL_SUBMITTED");
@@ -846,7 +823,7 @@ public:
         double desired_ask = signal.my_ask;
 
         auto [bid_size, ask_size] = compute_order_size(signal);
-        double tick = config.tick_size;
+        double tick = config.markets[market].tick_size;
 
         Order* bid_order = get_open_order("BUY");
         Order* ask_order = get_open_order("SELL");
@@ -861,7 +838,7 @@ public:
             if(bid_size > 0.0) place_limit("BUY", desired_bid, bid_size, signal);
         }
 
-        else if(abs(desired_bid - config.from_tick(bid_order->price_tick)) >= tick && !bid_order->pending_cancel &&
+        else if(abs(desired_bid - config.from_tick(bid_order->price_tick, market)) >= tick && !bid_order->pending_cancel &&
             (bid_order->status == "LIVE" || bid_order->status == "PARTIALLY_FILLED")){
             cancel_order(bid_order);
         }
@@ -873,7 +850,7 @@ public:
             if(ask_size > 0.0) place_limit("SELL", desired_ask, ask_size, signal);
         }
 
-        else if(abs(desired_ask - config.from_tick(ask_order->price_tick)) >= tick && !ask_order->pending_cancel &&
+        else if(abs(desired_ask - config.from_tick(ask_order->price_tick, market)) >= tick && !ask_order->pending_cancel &&
             (ask_order->status == "LIVE" || ask_order->status == "PARTIALLY_FILLED")){
             cancel_order(ask_order);
         }

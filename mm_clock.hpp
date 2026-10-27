@@ -144,7 +144,7 @@ public:
         ctx.set_default_verify_paths();
 
         tcp::resolver resolver(ioc);
-        auto results = resolver.resolve(config.base_url, "443");
+        auto results = resolver.resolve(config.markets["spot"].base_url, "443");
 
         // -------------------------
         // STEP 1: TCP SOCKET
@@ -156,7 +156,7 @@ public:
         // STEP 2: TLS LAYER
         // -------------------------
         ssl_stream ssl_sock(move(socket), ctx);
-        SSL_set_tlsext_host_name(ssl_sock.native_handle(), config.base_url.c_str());
+        SSL_set_tlsext_host_name(ssl_sock.native_handle(), config.markets["spot"].base_url.c_str());
         ssl_sock.handshake(ssl::stream_base::client);
 
         simdjson::ondemand::parser parser;
@@ -165,10 +165,10 @@ public:
         int64_t best_rtt = INT64_MAX;
 
         for(int i = 0; i < 5; i++){
-            http::request<http::empty_body> req{http::verb::get, "/" + config.endpoint + "/time", 11};
+            http::request<http::empty_body> req{http::verb::get, "/" + config.markets["spot"].endpoint + "/time", 11};
 
             req.keep_alive(true);
-            req.set(http::field::host, config.base_url);
+            req.set(http::field::host, config.markets["spot"].base_url);
             req.set(http::field::user_agent, config.struct_model);
 
             // Wall clock (for Binance comparison)
