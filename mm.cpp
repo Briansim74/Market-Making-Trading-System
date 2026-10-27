@@ -212,7 +212,6 @@ public:
 
         spot_recorder.log_trade(trade);
         spot_execution.process_trade(trade);
-        cout << "on trade spot1\n";
     }
 
     void on_trade_event_perps(const Trade& trade){
@@ -224,7 +223,6 @@ public:
 
         perps_recorder.log_trade(trade);
         perps_execution.process_trade(trade);
-        cout << "on trade perp1\n";
     }
 
     void on_depth_event_spot(const Depth& depth){
@@ -275,11 +273,10 @@ public:
 
         Signal signal = strategy.generate_quotes(spot_state);
         spot_recorder.log_snapshot(signal);
-        cout << "ondepth spot1\n";
         spot_state.last_signal = signal;
-        cout << "ondepth spot2\n";
+
         if(config.market != "spot" || !trading_enabled) return; // to be changed if shift to error style
-        cout << "ondepth spot3\n";
+
         spot_execution.place_quotes(signal);
     }
 
@@ -332,11 +329,10 @@ public:
         Signal signal = strategy.generate_quotes(perps_state);
         perps_recorder.log_snapshot(signal);
         perps_state.last_signal = signal;
-        cout << "on depth perp0\n";
+
         if(config.market == "spot" || !trading_enabled) return; // for hedging
-        cout << "on depth perp1\n";
+
         perps_execution.place_quotes(signal);
-        cout << "on depth perp2\n";
     }
 
     void on_depth_event_spot_latency(const Depth& depth){
@@ -543,9 +539,9 @@ public:
 
     void on_cancel_event(){
         cout << "CANCELLING OPEN ORDERS\n";
-        if(spot_execution == nullptr) cout << "yes spot cancel\n";
-        if(spot_execution.enabled() == true) cout << "yes spot cancel\n";
-        if(perps_execution.enabled() == true) cout << "yes perps cancel\n";
+        // if(spot_execution == nullptr) cout << "yes spot cancel\n";
+        // if(spot_execution.enabled() == true) cout << "yes spot cancel\n";
+        // if(perps_execution.enabled() == true) cout << "yes perps cancel\n";
         cout << "CANCELLING OPEN ORDERS1.1\n";
         spot_execution.cancel_all_orders(); // to be changed to spot + perps
         waiting_for_cancel = true;
@@ -707,7 +703,7 @@ public:
         snap.system.trade_latency = maker_state.trade_latency;
         snap.system.depth_latency = maker_state.depth_latency;
         snap.system.exchange_latency = maker_state.exchange_latency;
-        cout << "snap done\n";
+
         return snap;
     }
 
@@ -793,7 +789,6 @@ public:
                 perps_execution = make_unique<LiveExecution>(config, perps_state, perps_recorder, *perps_broker, clock, "perps"); // TO CHANGE TO USE TERNARY FOR CONFIG MODE FOR PERPS AND TESTNET PERPS
                 perps_user_stream = make_unique<BinancePerpsUserStream>(config, *perps_broker, execution_event, clock, "perps");
             }
-            cout << "init4\n";
         }
 
         else if(config.mode == "live" && config.market == "perps"){

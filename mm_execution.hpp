@@ -706,7 +706,7 @@ public:
         order.resp = resp;
 
         if(resp.contains("code")){
-            cout << "[BROKER] - ERROR: " << resp["msg"].get<std_string>() << "\n";
+            cout << "[BROKER] - ERROR: " << resp["msg"].get<std_string>() << "\n"; // if min notional error, check the test size * test price < min notional, adjust test spread
 
             order.ts = clock.now_ms();
             order.status = "REJECTED";
@@ -980,6 +980,5 @@ public:
             cout << "UNKNOWN ORDER UPDATE " << stream.exec_type << "\n";
             throw runtime_error("unknown order update");            
         }
-        cout << "stream end\n";
     }
 };

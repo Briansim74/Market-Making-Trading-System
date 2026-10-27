@@ -129,51 +129,60 @@ public:
     string request(http::verb method, const string& target,
                 const vector<string>& headers = {}, const string& body = ""){
 
-        lock_guard<mutex> lock(http_mtx);
-        http::request<http::string_body> req{method, target, 11};
+        for(int attempt = 1; attempt <= 3; attempt++){
 
-        req.set(http::field::host, config.markets[market].base_url);
-        req.set(http::field::user_agent, config.struct_model);
+            beast::error_code ec;
+            http::response<http::string_body> res;
 
-        for(const auto& h: headers){
-            auto pos = h.find(":");
+            cout << "[HTTP] - ATTEMPT " << attempt << "\n";
 
-            if(pos != string::npos){
-                std_string key = h.substr(0, pos);
-                std_string value = h.substr(pos + 1);
+            {
+                lock_guard<mutex> lock(http_mtx);
+                http::request<http::string_body> req{method, target, 11};
 
-                while(!value.empty() && value[0] == ' ')
-                    value.erase(value.begin());
+                req.set(http::field::host, config.markets[market].base_url);
+                req.set(http::field::user_agent, config.struct_model);
 
-                req.set(key,value);
+                for(const auto& h: headers){
+                    auto pos = h.find(":");
+
+                    if(pos != string::npos){
+                        std_string key = h.substr(0, pos);
+                        std_string value = h.substr(pos + 1);
+
+                        while(!value.empty() && value[0] == ' ')
+                            value.erase(value.begin());
+
+                        req.set(key,value);
+                    }
+                }
+
+                if(!body.empty()){
+                    req.body() = body;
+                    req.prepare_payload();
+                }
+
+                beast::flat_buffer buffer;
+
+                http::write(ssl_sock, req, ec);
+                http::read(ssl_sock, buffer, res, ec);
+
+                if(ec){
+                    reconnect();
+                    continue;
+                }
             }
+
+            if(res.result_int() >= 400){
+                cout << "[HTTP] - ERROR: status >= 400: HTTP " + to_string(res.result_int()) + ": " + res.body();
+            }
+            
+            cout << "\n===== HTTP RESPONSE =====\n";
+            if(method != http::verb::get) cout << res << endl;
+            cout << "\n===== HTTP RESPONSE END =====\n";
+            return res.body();
         }
-
-        if(!body.empty()){
-            req.body() = body;
-            req.prepare_payload();
-        }
-
-        beast::flat_buffer buffer;
-        beast::error_code ec;
-
-        http::write(ssl_sock, req, ec);
-        http::response<http::string_body> res;
-        http::read(ssl_sock, buffer, res, ec);
-
-        if(ec){
-            reconnect();
-            return "reconnect";
-        }
-
-        if(res.result_int() >= 400){
-            cout << "[HTTP] - ERROR: status >= 400: HTTP " + to_string(res.result_int()) + ": " + res.body();
-        }
-        
-        cout << "\n===== HTTP RESPONSE =====\n";
-        if(method != http::verb::get) cout << res << endl;
-
-        return res.body();
+        return "request failed";
     }
 };
 
@@ -298,13 +307,6 @@ public:
         vector<std_string> headers = {"X-MBX-APIKEY: " + config.api_key};
 
         auto res = http.request(http::verb::post, url, headers);
-
-        if(res == "reconnect"){
-            cout << "\n========== BROKER RESPONSE ==========\n";
-            cout << "[BROKER] - replacing place limit\n";
-            res = http.request(http::verb::post, url, headers); // deleted auto res = ...
-        }
-
         return json::parse(res);
     }
 
@@ -342,13 +344,6 @@ public:
         vector<std_string> headers = {"X-MBX-APIKEY: " + config.api_key};
 
         auto res = http.request(http::verb::delete_, url, headers);
-
-        if(res == "reconnect"){
-            cout << "\n========== BROKER RESPONSE ==========\n"; // TO REMOVE, SINCE RECONNECT IS HANDLED INSIDE HTTP REQUEST
-            cout << "[BROKER] - replacing cancel\n";
-            res = http.request(http::verb::delete_, url, headers); // deleted auto res = ...
-        }
-
         return json::parse(res);
     }
 };
@@ -1088,13 +1083,142 @@ public:
     }
 };
 
+// class BinancePerpsUserStream : public BinanceUserStream {
+// public:
+//     MarketConfig& config;
+//     BinanceBroker& broker;
+//     ExecutionEventQueue& execution_event;
+//     BinanceClock& clock;
+
+//     const std_string market;
+    
+//     atomic<bool> running{false};
+//     atomic<bool> connected{false};
+    
+//     thread stream_thread;
+//     simdjson::ondemand::parser parser;
+
+//     unique_ptr<ws_stream> ws;
+
+//     mutex connection_mtx;
+//     condition_variable connection_cv;
+
+//     BinancePerpsUserStream(MarketConfig& config, BinanceBroker& broker, ExecutionEventQueue& execution_event, BinanceClock& clock, const std_string market)
+//         : config(config), broker(broker), execution_event(execution_event), clock(clock), market(market) {}
+
+//     void start(){
+//         running = true;
+//         stream_thread = thread([this](){run();});
+//         wait_until_connected();
+//     }
+
+//     void wait_until_connected(){
+//         unique_lock<mutex> lock(connection_mtx);
+//         connection_cv.wait(lock, [this]{return connected.load();});
+//     }
+
+//     void run(){
+//         std_string listen_key = broker.open_user_stream();
+
+//         asio::io_context ioc;
+//         ssl::context ctx(ssl::context::tlsv12_client);
+//         ctx.set_default_verify_paths();
+
+//         tcp::resolver resolver(ioc);
+//         auto results = resolver.resolve(config.markets[market].hostname, "443");
+        
+//         // -------------------------
+//         // STEP 1: TCP SOCKET
+//         // -------------------------
+//         tcp::socket socket(ioc);
+//         asio::connect(socket, results);
+
+//         // -------------------------
+//         // STEP 2: TLS LAYER
+//         // -------------------------
+//         ssl_stream ssl_sock(move(socket), ctx);
+//         SSL_set_tlsext_host_name(ssl_sock.native_handle(), config.markets[market].hostname.c_str());
+//         ssl_sock.handshake(ssl::stream_base::client);
+
+//         // -------------------------
+//         // STEP 3: WEBSOCKET LAYER
+//         // -------------------------
+//         ws = make_unique<ws_stream>(move(ssl_sock));
+//         ws->handshake(config.markets[market].hostname, "/ws/" + listen_key);
+
+//         {
+//             lock_guard<mutex> lock(connection_mtx);
+//             connected = true;
+//         }
+//         connection_cv.notify_one();
+
+//         beast::flat_buffer buffer;
+//         cout << "PERPS STREAM STARTED\n";
+//         while(running){
+//             boost::system::error_code ec;
+//             ws->read(buffer, ec);
+//             cout << "stream loop\n";
+//             if(ec) break;
+
+//             std_string msg = beast::buffers_to_string(buffer.data());
+//             buffer.consume(buffer.size());
+
+//             on_message(msg);
+//         }
+//     }
+
+//     void stop(){
+//         cout << "STOPPING USER STREAM\n";
+//         running = false;
+
+//         boost::system::error_code ec;
+//         beast::get_lowest_layer(*ws).cancel(ec);
+
+//         if(stream_thread.joinable()) stream_thread.join();
+
+//         cout << "USER STREAM STOPPED\n";
+//     }
+
+//     void on_message(const std_string& msg){
+//         cout << "on message stream0\n";
+//         simdjson::padded_string json(msg);
+//         auto doc = parser.iterate(json);
+
+//         if(std_string(doc["e"]) != "ORDER_TRADE_UPDATE") return;
+//         cout << msg << "\n";
+//         cout << "on message stream\n";
+//         simdjson::ondemand::object o = doc["o"].get_object();
+
+//         Stream stream;
+//         stream.client_oid = std_string(o["c"]);
+//         stream.side = std_string(o["S"]);
+//         stream.status = std_string(o["X"]);
+//         stream.exec_type = std_string(o["x"]);
+//         stream.order_type = std_string(o["o"]);
+//         stream.price = double(o["p"].get_double_in_string());
+//         stream.qty = double(o["q"].get_double_in_string());
+//         stream.fill_price = double(o["L"].get_double_in_string());
+//         stream.fill_qty = double(o["l"].get_double_in_string());
+//         stream.fees_paid = double(o["n"].get_double_in_string());
+//         stream.exchange_ts = int64_t(o["T"]);
+//         stream.local_ts = clock.now_ms();
+//         stream.is_maker = o["m"].get<bool>();
+//         cout << "on message stream1\n";
+//         ExecutionEvent ev;
+//         ev.type = ExecutionEventType::PERPS_STREAM_UPDATE;
+//         ev.stream = stream;
+//         execution_event.push(ev);
+//         cout << "on message stream2\n";
+
+//     }
+// };
+
 class BinancePerpsUserStream : public BinanceUserStream {
 public:
     MarketConfig& config;
     BinanceBroker& broker;
     ExecutionEventQueue& execution_event;
     BinanceClock& clock;
-
     const std_string market;
     
     atomic<bool> running{false};
@@ -1149,7 +1273,8 @@ public:
         // STEP 3: WEBSOCKET LAYER
         // -------------------------
         ws = make_unique<ws_stream>(move(ssl_sock));
-        ws->handshake(config.markets[market].hostname, "/ws/" + listen_key);
+        ws->handshake(config.markets[market].hostname, "/private/ws?listenKey=" + listen_key);
+        // ws->handshake(config.markets[market].hostname, "/private/ws?listenKey=" + listen_key + "&events=ORDER_TRADE_UPDATE"); // filters to only receive order trade updates
 
         {
             lock_guard<mutex> lock(connection_mtx);
@@ -1184,6 +1309,7 @@ public:
     }
 
     void on_message(const std_string& msg){
+
         simdjson::padded_string json(msg);
         auto doc = parser.iterate(json);
 

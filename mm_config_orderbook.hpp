@@ -333,8 +333,8 @@ public:
             cout << "exchange_latency:   " << exchange_latency << "\n";
             cout << "gamma:              " << gamma << "\n";
             cout << "initial_position:   " << initial_position << "\n";
-            cout << "base_spread:        " << base_spread << "\n";
-            cout << "base_size:          " << base_size << "\n";
+            cout << "base_spread:        " << markets[market].base_spread << "\n";
+            cout << "base_size:          " << markets[market].base_size << "\n";
             cout << "max_inv:            " << max_inv << "\n";
             cout << "target_notional:    " << target_notional << "\n";
             cout << "initial_cash:       " << markets[market].initial_cash << "\n";
@@ -409,10 +409,7 @@ public:
 
 class OrderBook {
 public:
-    
-
     MarketConfig& config;
-
     const std_string market;
 
     int64_t last_update_id = 0;

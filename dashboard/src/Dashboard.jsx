@@ -4,7 +4,7 @@ export default function Dashboard() {
   const [snapshot, setSnapshot] = useState(null);
 
   useEffect(() => {
-    const ws = new WebSocket("ws://localhost:8000/ws");
+    const ws = new WebSocket(`ws://${window.location.hostname}:8000/ws`);
 
     ws.onmessage = (msg) => {
       const event = JSON.parse(msg.data);
