@@ -98,8 +98,8 @@ public:
     State& perps_state;
     MarketMakingStrategy& strategy;
     
-    Execution& spot_execution; // maker execution
-    Execution& perps_execution; // hedge execution
+    Execution& spot_execution;
+    Execution& perps_execution;
 
     BinanceClock& clock;
     ExecutionEventQueue& execution_event;
@@ -109,11 +109,19 @@ public:
     DatasetRecorder& spot_recorder;
     DatasetRecorder& perps_recorder;
 
-
+    atomic<bool> spot_execution_enabled = false;
+    atomic<bool> perps_execution_enabled = false;
 
     atomic<bool> trading_enabled = true;
     atomic<bool> waiting_for_cancel = false;
     atomic<bool> waiting_for_flatten = false;
+
+
+    atomic<bool> waiting_for_cancel_spot = false;
+    atomic<bool> waiting_for_cancel_perps = false;
+    atomic<bool> waiting_for_flatten_spot = false;
+    atomic<bool> waiting_for_flatten_perps = false;
+
     atomic<bool> shutdown_complete = false;
     
     mutex shutdown_mtx;
@@ -121,18 +129,25 @@ public:
 
     std_string header;
     
-    Engine(MarketConfig& config, State& spot_state, State& perps_state, MarketMakingStrategy& strategy, Execution& spot_execution, Execution& perps_execution, 
-        
-        
-        BinanceClock& clock,
-        ExecutionEventQueue& execution_event, EventNotifier& dashboard_event, SnapshotStore& snapshot_store, 
-        
-        DatasetRecorder& spot_recorder, DatasetRecorder& perps_recorder)
-        : config(config), spot_state(spot_state), perps_state(perps_state), strategy(strategy), spot_execution(spot_execution), perps_execution(perps_execution), 
-        
-        clock(clock), execution_event(execution_event),
-        dashboard_event(dashboard_event), snapshot_store(snapshot_store), spot_recorder(spot_recorder), perps_recorder(perps_recorder) {build_header();}
-
+    Engine(MarketConfig& config, State& spot_state, State& perps_state, MarketMakingStrategy& strategy, Execution& spot_execution, Execution& perps_execution, BinanceClock& clock,
+        ExecutionEventQueue& execution_event, EventNotifier& dashboard_event, SnapshotStore& snapshot_store, DatasetRecorder& spot_recorder, DatasetRecorder& perps_recorder)
+        : config(config), spot_state(spot_state), perps_state(perps_state), strategy(strategy), spot_execution(spot_execution), perps_execution(perps_execution), clock(clock),
+        execution_event(execution_event), dashboard_event(dashboard_event), snapshot_store(snapshot_store), spot_recorder(spot_recorder), perps_recorder(perps_recorder)
+        {
+            initialize();
+            build_header();
+        }
+    
+    void initialize(){
+        if(config.market == "spot"){
+            spot_execution_enabled = true;
+            if(config.target_hedge_ratio > 0.0) perps_execution_enabled = true;
+        }
+        else if(config.market != "spot"){
+            perps_execution_enabled = true;
+            if(config.target_hedge_ratio > 0.0) spot_execution_enabled = true;
+        }
+    }
 
     void process_event(const ExecutionEvent& ev){
         switch(ev.type){
@@ -157,7 +172,7 @@ public:
                 break;
 
             case ExecutionEventType::PERPS_STREAM_UPDATE:
-                on_stream_event_perp(ev.stream);
+                on_stream_event_perps(ev.stream);
                 break;
 
             case ExecutionEventType::CANCEL_UPDATE:
@@ -454,16 +469,17 @@ public:
         
         if(!trading_enabled) return;
 
-        if(config.market != "spot"){
-            // HedgeSignal hedge_signal = strategy.calculate_hedge(state);
-            // execution.place_hedge(hedge_signal);
-            // cout << "yes";
+        if(config.target_hedge_ratio > 0.0 && config.market != "spot"){
+            cout << "perps hedge1\n";
+            Signal hedge_signal = strategy.calculate_hedge(spot_state, perps_state);
+            perps_execution.place_hedge_quotes(hedge_signal);
+            cout << "perps hedge1\n";
         }
         
         else spot_execution.place_quotes(*spot_state.last_signal);
     }
 
-    void on_stream_event_perp(const Stream& stream){
+    void on_stream_event_perps(const Stream& stream){
         perps_state.time = stream.local_ts;
         perps_execution.apply_stream_update(stream);
 
@@ -472,10 +488,11 @@ public:
         
         if(!trading_enabled) return;
 
-        if(config.market == "spot"){
-            HedgeSignal hedge_signal = strategy.calculate_hedge(*spot_state.last_signal, perps_state);
-            // execution.place_hedge(hedge_signal);
-            // cout << "yes";
+        if(config.target_hedge_ratio > 0.0 && config.market == "spot"){
+            cout << "spot hedge1\n";
+            Signal hedge_signal = strategy.calculate_hedge(perps_state, spot_state);
+            spot_execution.place_hedge_quotes(hedge_signal);
+            cout << "spot hedge1\n";
         }
         
         else perps_execution.place_quotes(*perps_state.last_signal);
@@ -539,11 +556,11 @@ public:
 
     void on_cancel_event(){
         cout << "CANCELLING OPEN ORDERS\n";
-        // if(spot_execution == nullptr) cout << "yes spot cancel\n";
-        // if(spot_execution.enabled() == true) cout << "yes spot cancel\n";
-        // if(perps_execution.enabled() == true) cout << "yes perps cancel\n";
-        cout << "CANCELLING OPEN ORDERS1.1\n";
-        spot_execution.cancel_all_orders(); // to be changed to spot + perps
+
+        if(spot_execution_enabled) spot_execution.cancel_all_orders();
+        if(perps_execution_enabled) perps_execution.cancel_all_orders();
+        // cout << "CANCELLING OPEN ORDERS1.1\n";
+        // spot_execution.cancel_all_orders(); // to be changed to spot + perps
         waiting_for_cancel = true;
         if(config.mode == "stochastic" || config.mode == "replay"){
             wait_for_cancel();
@@ -552,41 +569,151 @@ public:
         cout << "CANCELLING OPEN ORDERS1\n";
     }
 
-    void wait_for_cancel(){
-        if(waiting_for_cancel && (!spot_execution.get_open_order("BUY") && !spot_execution.get_open_order("SELL"))){ // to be changed to spot + perps
+    // void wait_for_cancel(){
+    //     if(waiting_for_cancel && (!spot_execution.get_open_order("BUY") && !spot_execution.get_open_order("SELL"))){ // to be changed to spot + perps
             
-            cout << "NO MORE OPEN ORDERS, PLACING MARKET\n";
-            waiting_for_cancel = false;
-            waiting_for_flatten = true;
+    //         cout << "NO MORE OPEN ORDERS, PLACING MARKET\n";
+    //         waiting_for_cancel = false;
+    //         waiting_for_flatten = true;
 
-            spot_execution.place_market();
-            cout << "wait_for_cancel done\n";
+    //         spot_execution.place_market();
+    //         cout << "wait_for_cancel done\n";
+    //     }
+    // }
+
+    void wait_for_cancel(){
+        if(waiting_for_cancel){
+            if(spot_execution_enabled && perps_execution_enabled && !spot_execution.get_open_order("BUY") && !spot_execution.get_open_order("SELL")
+                && !perps_execution.get_open_order("BUY") && !perps_execution.get_open_order("SELL")){
+                
+                cout << "NO MORE OPEN SPOT & PERP ORDERS, PLACING MARKET\n";
+                waiting_for_cancel = false;
+                waiting_for_flatten = true;
+
+                spot_execution.place_market();
+                perps_execution.place_market();
+                cout << "wait_for_cancel done\n";
+            }
+
+            else if(spot_execution_enabled && !perps_execution_enabled && !spot_execution.get_open_order("BUY") && !spot_execution.get_open_order("SELL")){
+                
+                cout << "NO MORE OPEN SPOT ORDERS, PLACING MARKET\n";
+                waiting_for_cancel = false;
+                waiting_for_flatten = true;
+
+                spot_execution.place_market();
+                cout << "wait_for_cancel done\n";
+            }
+
+            else if(perps_execution_enabled && !spot_execution_enabled && !perps_execution.get_open_order("BUY") && !perps_execution.get_open_order("SELL")){
+                
+                cout << "NO MORE OPEN PERP ORDERS, PLACING MARKET\n";
+                waiting_for_cancel = false;
+                waiting_for_flatten = true;
+
+                perps_execution.place_market();
+                cout << "wait_for_cancel done\n";
+            }
         }
     }
+
+    // void wait_for_flatten(){
+    //     // if(waiting_for_flatten && abs(state.inventory) <= 1e-9){
+    //     // Already within [-10, +10] USDT
+    //     if(waiting_for_flatten && abs(spot_state.inventory * spot_state.market_book.mid()) <= config.target_notional){ // to be changed to spot + perps
+ 
+    //         cout << "abs(state.inventory * state.market_book.mid(): " << abs(spot_state.inventory * spot_state.market_book.mid()) << "\n";
+    //         waiting_for_flatten = false;
+
+    //         Snapshot snap = build_snapshot();
+    //         snapshot_store.set(move(snap));
+
+    //         {
+    //             lock_guard<mutex> lock(dashboard_event.signal_mtx);
+    //             dashboard_event.signal_pending = true;
+    //         }
+
+    //         dashboard_event.signal_cv.notify_one();
+            
+    //         {
+    //             lock_guard<mutex> lock(shutdown_mtx);
+    //             shutdown_complete = true;
+    //         }
+    //         shutdown_cv.notify_one();
+    //     }
+    // }
 
     void wait_for_flatten(){
         // if(waiting_for_flatten && abs(state.inventory) <= 1e-9){
         // Already within [-10, +10] USDT
-        if(waiting_for_flatten && abs(spot_state.inventory * spot_state.market_book.mid()) <= config.target_notional){ // to be changed to spot + perps
- 
-            cout << "abs(state.inventory * state.market_book.mid(): " << abs(spot_state.inventory * spot_state.market_book.mid()) << "\n";
-            waiting_for_flatten = false;
-
-            Snapshot snap = build_snapshot();
-            snapshot_store.set(move(snap));
-
-            {
-                lock_guard<mutex> lock(dashboard_event.signal_mtx);
-                dashboard_event.signal_pending = true;
-            }
-
-            dashboard_event.signal_cv.notify_one();
+        if(waiting_for_flatten){
+            if(spot_execution_enabled && perps_execution_enabled && abs(spot_state.inventory * spot_state.market_book.mid()) <= config.target_notional &&
+                abs(perps_state.inventory * perps_state.market_book.mid()) <= config.target_notional){ // to be changed to spot + perps
             
-            {
-                lock_guard<mutex> lock(shutdown_mtx);
-                shutdown_complete = true;
+                cout << "abs(spot_state.inventory * spot_state.market_book.mid(): " << abs(spot_state.inventory * spot_state.market_book.mid()) << "\n";
+                cout << "abs(perps_state.inventory * perps_state.market_book.mid(): " << abs(perps_state.inventory * perps_state.market_book.mid()) << "\n";
+                waiting_for_flatten = false;
+
+                Snapshot snap = build_snapshot();
+                snapshot_store.set(move(snap));
+
+                {
+                    lock_guard<mutex> lock(dashboard_event.signal_mtx);
+                    dashboard_event.signal_pending = true;
+                }
+
+                dashboard_event.signal_cv.notify_one();
+                
+                {
+                    lock_guard<mutex> lock(shutdown_mtx);
+                    shutdown_complete = true;
+                }
+                shutdown_cv.notify_one();
             }
-            shutdown_cv.notify_one();
+
+            else if(spot_execution_enabled && !perps_execution_enabled && abs(spot_state.inventory * spot_state.market_book.mid()) <= config.target_notional){
+                
+                cout << "abs(spot_state.inventory * spot_state.market_book.mid(): " << abs(spot_state.inventory * spot_state.market_book.mid()) << "\n";
+                waiting_for_flatten = false;
+
+                Snapshot snap = build_snapshot();
+                snapshot_store.set(move(snap));
+
+                {
+                    lock_guard<mutex> lock(dashboard_event.signal_mtx);
+                    dashboard_event.signal_pending = true;
+                }
+
+                dashboard_event.signal_cv.notify_one();
+                
+                {
+                    lock_guard<mutex> lock(shutdown_mtx);
+                    shutdown_complete = true;
+                }
+                shutdown_cv.notify_one();
+            }
+
+            else if(perps_execution_enabled && !spot_execution_enabled && abs(perps_state.inventory * perps_state.market_book.mid()) <= config.target_notional){
+                
+                cout << "abs(perps_state.inventory * perps_state.market_book.mid(): " << abs(perps_state.inventory * perps_state.market_book.mid()) << "\n";
+                waiting_for_flatten = false;
+
+                Snapshot snap = build_snapshot();
+                snapshot_store.set(move(snap));
+
+                {
+                    lock_guard<mutex> lock(dashboard_event.signal_mtx);
+                    dashboard_event.signal_pending = true;
+                }
+
+                dashboard_event.signal_cv.notify_one();
+                
+                {
+                    lock_guard<mutex> lock(shutdown_mtx);
+                    shutdown_complete = true;
+                }
+                shutdown_cv.notify_one();
+            }
         }
     }
 
@@ -773,7 +900,7 @@ public:
     vector<thread> threads;
 
     TradingSystem(const ordered_json& params) :
-        params(params), config(params), spot_state(config, "spot"), perps_state(config, (config.mode == "testnet") ? "testnet_perps" : "perps"),
+        params(params), config(params), spot_state(config, "spot"), perps_state(config, (config.mode == "live") ? "perps" : "testnet_perps"),
         strategy(config), spot_recorder(config, spot_state, params, "spot"), perps_recorder(config, perps_state, params, "perps"),
         clock(config), dashboard_terminal(snapshot_store), dashboard_server(config, snapshot_store),
         signals(ioc, SIGINT, SIGTERM) {initialize();}
@@ -785,22 +912,22 @@ public:
             spot_user_stream = make_unique<BinanceSpotUserStream>(config, *spot_broker, execution_event, clock);
 
             if(config.target_hedge_ratio > 0.0){
-                perps_broker = make_unique<BinancePerpsBroker>(config, clock, "perps");
-                perps_execution = make_unique<LiveExecution>(config, perps_state, perps_recorder, *perps_broker, clock, "perps"); // TO CHANGE TO USE TERNARY FOR CONFIG MODE FOR PERPS AND TESTNET PERPS
-                perps_user_stream = make_unique<BinancePerpsUserStream>(config, *perps_broker, execution_event, clock, "perps");
+                perps_broker = make_unique<BinancePerpsBroker>(config, clock);
+                perps_execution = make_unique<LiveExecution>(config, perps_state, perps_recorder, *perps_broker, clock, "perps");
+                perps_user_stream = make_unique<BinancePerpsUserStream>(config, *perps_broker, execution_event, clock);
             }
         }
 
         else if(config.mode == "live" && config.market == "perps"){
-            perps_broker = make_unique<BinancePerpsBroker>(config, clock, "perps");
+            perps_broker = make_unique<BinancePerpsBroker>(config, clock);
             perps_execution = make_unique<LiveExecution>(config, perps_state, perps_recorder, *perps_broker, clock, "perps");
-            perps_user_stream = make_unique<BinancePerpsUserStream>(config, *perps_broker, execution_event, clock, "perps");
+            perps_user_stream = make_unique<BinancePerpsUserStream>(config, *perps_broker, execution_event, clock);
         }
 
         else if((config.mode == "testnet" || config.mode == "live") && config.market == "testnet_perps"){
-            perps_broker = make_unique<BinancePerpsBroker>(config, clock, "testnet_perps");
+            perps_broker = make_unique<BinancePerpsBroker>(config, clock);
             perps_execution = make_unique<LiveExecution>(config, perps_state, perps_recorder, *perps_broker, clock, "testnet_perps");
-            perps_user_stream = make_unique<BinancePerpsUserStream>(config, *perps_broker, execution_event, clock, "testnet_perps");
+            perps_user_stream = make_unique<BinancePerpsUserStream>(config, *perps_broker, execution_event, clock);
         }
         
         else if(config.mode != "live" && config.market == "spot"){
@@ -816,11 +943,11 @@ public:
         }
 
         else if(config.exchange == "binance" && config.market == "perps" && config.mode != "replay"){
-            perps_feed = make_unique<BinancePerpsFeed>(config, perps_state, execution_event, perps_recorder, clock, "perps");
+            perps_feed = make_unique<BinancePerpsFeed>(config, perps_state, execution_event, perps_recorder, clock);
         }
 
         else if(config.exchange == "binance" && config.market == "testnet_perps" && config.mode != "replay"){
-            perps_feed = make_unique<BinancePerpsFeed>(config, perps_state, execution_event, perps_recorder, clock, "testnet_perps");
+            perps_feed = make_unique<BinancePerpsFeed>(config, perps_state, execution_event, perps_recorder, clock);
         }
 
         else if(config.exchange == "binance" && config.market == "spot" && config.mode == "replay"){
@@ -828,7 +955,7 @@ public:
         }
 
         else if(config.exchange == "binance" && config.market == "testnet_perps" && config.mode == "replay"){
-            perps_feed = make_unique<BinancePerpsReplayFeed>(config, perps_state, execution_event, perps_recorder, clock, "testnet_perps");
+            perps_feed = make_unique<BinancePerpsReplayFeed>(config, perps_state, execution_event, perps_recorder, clock);
         }
 
         else if(config.exchange == "polymarket"){

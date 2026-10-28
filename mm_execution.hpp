@@ -99,6 +99,9 @@ public:
     virtual Order* get_open_order(const std_string&) = 0;
     virtual void cancel_all_orders() = 0;
     virtual void place_quotes(const Signal&) = 0;
+
+    virtual void place_hedge_quotes(const Signal&) = 0;
+
     virtual void place_market() = 0;
     virtual void apply_stream_update(const Stream&) = 0;
     virtual ~Execution() = default;
@@ -110,8 +113,7 @@ public:
     State& state;
     DatasetRecorder& recorder;
     BinanceClock& clock;
-
-    const std_string market;
+    std_string market;
 
     unordered_map<std_string, Order> open_orders;
 
@@ -126,7 +128,7 @@ public:
 
     priority_queue<LatencyEvent, vector<LatencyEvent>, Compare> latency_queue;
 
-    PaperExecution(MarketConfig& config, State& state, DatasetRecorder& recorder, BinanceClock& clock, const std_string market)
+    PaperExecution(MarketConfig& config, State& state, DatasetRecorder& recorder, BinanceClock& clock, std_string market)
         : config(config), state(state), recorder(recorder), clock(clock), market(market)
     {
         state.exchange_latency = config.exchange_latency;
@@ -407,6 +409,11 @@ public:
         }
     }
 
+
+
+    void place_hedge_quotes(const Signal&) override {}
+
+
     void match_side(const Trade& trade){
 
         std_string side = (trade.side == "BUY") ? "SELL" : "BUY";
@@ -548,8 +555,7 @@ public:
     DatasetRecorder& recorder;
     BinanceBroker& broker;
     BinanceClock& clock;
-
-    const std_string market;
+    std_string market;
 
     unordered_map<std_string, Order> open_orders;
 
@@ -559,7 +565,7 @@ public:
     double last_bid = 0.0;
     double last_ask = 0.0;
 
-    LiveExecution(MarketConfig& config, State& state, DatasetRecorder& recorder, BinanceBroker& broker, BinanceClock& clock, const std_string market)
+    LiveExecution(MarketConfig& config, State& state, DatasetRecorder& recorder, BinanceBroker& broker, BinanceClock& clock, std_string market)
         : config(config), state(state), recorder(recorder), broker(broker), clock(clock), market(market) {}
 
     double get_last_bid() override {
@@ -823,6 +829,109 @@ public:
         double desired_ask = signal.my_ask;
 
         auto [bid_size, ask_size] = compute_order_size(signal);
+        double tick = config.markets[market].tick_size;
+
+        Order* bid_order = get_open_order("BUY");
+        Order* ask_order = get_open_order("SELL");
+
+        current_bid_size = bid_size;
+        current_ask_size = ask_size;
+
+        // -------------------------
+        // BID ORDERS
+        // -------------------------
+        if(!bid_order){ // if no bid order
+            if(bid_size > 0.0) place_limit("BUY", desired_bid, bid_size, signal);
+        }
+
+        else if(abs(desired_bid - config.from_tick(bid_order->price_tick, market)) >= tick && !bid_order->pending_cancel &&
+            (bid_order->status == "LIVE" || bid_order->status == "PARTIALLY_FILLED")){
+            cancel_order(bid_order);
+        }
+
+        // -------------------------
+        // ASK ORDERS
+        // -------------------------
+        if(!ask_order){ // if no ask order
+            if(ask_size > 0.0) place_limit("SELL", desired_ask, ask_size, signal);
+        }
+
+        else if(abs(desired_ask - config.from_tick(ask_order->price_tick, market)) >= tick && !ask_order->pending_cancel &&
+            (ask_order->status == "LIVE" || ask_order->status == "PARTIALLY_FILLED")){
+            cancel_order(ask_order);
+        }
+    }
+
+    pair<double, double> compute_order_size_hedge(const Signal& signal){
+
+        // Convert inventory to USDT notional for risk calculations.
+        double inv_usdt = signal.maker_inventory * signal.maker_mid; // USDT per PEPE for maker state
+        
+        double hedge_inv_usdt = signal.hedge_inventory * signal.hedge_mid; // USDT per PEPE for maker state, equal to 1000 contracts already?
+
+        cout << "maker inv usdt: " << inv_usdt << " hedge inv usdt: " << hedge_inv_usdt << "\n";
+
+        double target_hedge_gate = 5.0;
+        // if(abs(inv_usdt) < target_hedge_gate) return; // no need hedge
+
+        double hedge_usdt = abs(config.target_hedge_ratio * inv_usdt);
+
+        cout << "how much of hedge usdt to cover: " << hedge_usdt << " fraction: " << config.target_hedge_ratio << "\n";
+
+        double overall_hedge_outstanding_usdt = hedge_usdt + hedge_inv_usdt;
+        cout << "target hedge gate: " << target_hedge_gate << "\n";
+        cout << "hedge_usdt: " << hedge_usdt << " hedge inv usdt: " << hedge_inv_usdt << "\n";
+        cout << "overall hedge still needed to cover: " << overall_hedge_outstanding_usdt << "\n";
+        if(overall_hedge_outstanding_usdt < target_hedge_gate) return {0.0, 0.0}; // no need hedge
+
+        hedge_usdt = overall_hedge_outstanding_usdt;
+
+
+
+
+
+        // Exchange minimum is 5 USDT. -1000PEPEUSDT
+        hedge_usdt = max(config.markets[market].base_size, min(hedge_usdt, config.markets[market].base_size)); // max 1.5 base size usdt per order
+        cout << "hedge usdt1: " << hedge_usdt << "\n";
+        // Inventory limits in USDT.
+        if(inv_usdt > 0.0){ // LONG INV, SHORT HEDGE
+
+            // Convert USDT notional -> PEPE quantity.
+            double ask_size = hedge_usdt / signal.mid;
+
+            // exchange LOT_SIZE normalization
+            ask_size = config.normalize_qty(ask_size, market);
+
+            // Re-check actual notional AFTER normalization.
+            if(ask_size < config.markets[market].base_size) ask_size = 0.0;
+            cout << "short: " << ask_size << "\n";
+            return {0.0, ask_size};
+        }
+        else{ // SHORT INV, LONG HEDGE
+
+            // Convert USDT notional -> PEPE quantity.
+            double bid_size = hedge_usdt / signal.mid;
+
+            // exchange LOT_SIZE normalization
+            bid_size = config.normalize_qty(bid_size, market);
+
+            // Re-check actual notional AFTER normalization.
+            if(bid_size < config.markets[market].base_size) bid_size = 0.0;
+
+            // cout << "bid_size: " << bid_size << "\n";
+            // cout << "ask_size: " << ask_size << "\n";
+            cout << "long: " << bid_size << "\n";
+            return {bid_size, 0.0};
+        }
+        return {0.0, 0.0};
+    }
+
+    void place_hedge_quotes(const Signal& signal) override {
+
+        double desired_bid = signal.my_bid;
+        double desired_ask = signal.my_ask;
+
+        auto [bid_size, ask_size] = compute_order_size_hedge(signal);
         double tick = config.markets[market].tick_size;
 
         Order* bid_order = get_open_order("BUY");

@@ -87,9 +87,6 @@ using ws_stream  = websocket::stream<ssl_stream>;
 // =========================
 class MarketConfig {
 public:
-
-    unordered_map<std_string, InstrumentConfig> markets;
-
     std_string exchange;
     std_string mode;
     std_string market;
@@ -99,15 +96,7 @@ public:
     std_string micro_signal_model;
     std_string residual_model;
     std_string toxicity_model;
-
-    // std_string instrument;
-    // std_string instrument_upper;
-
-    // std_string spot_instrument;
-    // std_string spot_instrument_upper;
-
-    // std_string perp_instrument;
-    // std_string perp_instrument_upper;
+    unordered_map<std_string, InstrumentConfig> markets;
 
     int64_t exchange_latency;
     double gamma;
@@ -115,24 +104,9 @@ public:
     double base_spread;
     double base_size;
     double max_inv;
-
     double target_notional;
     
-    // double spot_initial_cash;
-    // double perp_initial_cash;
-
-    // double spot_maker_fee_rate;
-    // double spot_taker_fee_rate;
-
-    // double perp_maker_fee_rate;
-    // double perp_taker_fee_rate;
-
     double target_hedge_ratio; // NEW
-
-    // double tick_size = 0.0;
-    // double step_size = 0.0;
-    // size_t price_precision = 0;
-    // size_t qty_precision = 0;
 
     std_string folder_path;
     size_t EVENTS_CHUNK;
@@ -146,17 +120,6 @@ public:
 
     std_string api_key;
     std_string api_secret;
-    // std_string base_url;
-    // std_string endpoint;
-    // std_string hostname;
-
-    // std_string perps_base_url;
-    // std_string perps_endpoint;
-    // std_string perps_hostname;
-
-    // std_string futures_base_url;
-    // std_string futures_endpoint;
-    // std_string futures_hostname;
 
     MarketConfig(const ordered_json& params) {initialize(params);}
 
@@ -198,7 +161,6 @@ public:
         markets["spot"].base_url = params["api"]["spot"]["base_url"].get<std_string>();
         markets["spot"].endpoint = params["api"]["spot"]["endpoint"].get<std_string>();
 
-
         markets["perps"].instrument = params["perps_instrument"].get<std_string>();
         markets["perps"].instrument_upper = markets["perps"].instrument;
         transform(markets["perps"].instrument_upper.begin(), markets["perps"].instrument_upper.end(), markets["perps"].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
@@ -210,7 +172,6 @@ public:
         markets["perps"].hostname = params["api"]["perps"]["hostname"].get<std_string>();
         markets["perps"].base_url = params["api"]["perps"]["base_url"].get<std_string>();
         markets["perps"].endpoint = params["api"]["perps"]["endpoint"].get<std_string>();
-
 
         markets["testnet_perps"].instrument = params["testnet_perps_instrument"].get<std_string>();
         markets["testnet_perps"].instrument_upper = markets["testnet_perps"].instrument;
@@ -224,29 +185,11 @@ public:
         markets["testnet_perps"].base_url = params["api"]["testnet_perps"]["base_url"].get<std_string>();
         markets["testnet_perps"].endpoint = params["api"]["testnet_perps"]["endpoint"].get<std_string>();
 
-
-
-
-
-        // spot_instrument = params["spot_instrument"].get<std_string>();
-        // spot_instrument_upper = spot_instrument;
-        // transform(spot_instrument_upper.begin(), spot_instrument_upper.end(), spot_instrument_upper.begin(), [](unsigned char c){return toupper(c);});
-
-
-        // perp_instrument = params["perp_instrument"].get<std_string>();
-        // perp_instrument_upper = perp_instrument;
-        // transform(perp_instrument_upper.begin(), perp_instrument_upper.end(), perp_instrument_upper.begin(), [](unsigned char c){return toupper(c);});
-
         exchange_latency = params["exchange_latency"].get<int64_t>();
         gamma = params["gamma"].get<double>();
         initial_position = params["initial_position"].get<double>();
-        // base_spread = params["base_spread"].get<double>();
-        // base_size = params["base_size"].get<double>();
         max_inv = params["max_inv"].get<double>();
         target_notional = params["target_notional"].get<double>();
-        // spot_initial_cash = params["spot_initial_cash"].get<double>();
-        // spot_maker_fee_rate = params["fees"]["spot_maker_fee_rate"].get<double>();
-        // spot_taker_fee_rate = params["fees"]["spot_taker_fee_rate"].get<double>();
 
         folder_path = params["folder_path"].get<std_string>();
         EVENTS_CHUNK = params["dataset"]["events_chunk"].get<size_t>();
@@ -260,21 +203,8 @@ public:
 
         api_key = (mode == "live") ? params["api"]["api_key_live"].get<std_string>() : params["api"]["api_key"].get<std_string>();
         api_secret = (mode == "live") ? params["api"]["api_secret_live"].get<std_string>() : params["api"]["api_secret"].get<std_string>();
-        // hostname = params["api"]["hostname_" + market].get<std_string>();
-        // base_url = params["api"]["base_url_" + market].get<std_string>();
-        // endpoint = params["api"]["endpoint_" + market].get<std_string>();
-
-        // perps_hostname = params["api"]["hostname_perps"].get<std_string>();
-        // perps_base_url = params["api"]["base_url_perps"].get<std_string>();
-        // perps_endpoint = params["api"]["endpoint_perps"].get<std_string>();
-
-        // futures_hostname = params["api"]["hostname_futures"].get<std_string>();
-        // futures_base_url = params["api"]["base_url_futures"].get<std_string>();
-        // futures_endpoint = params["api"]["endpoint_futures"].get<std_string>();
-
-        // std_string url = "https://" + base_url + "/" + endpoint + "/exchangeInfo?symbol=" + spot_instrument_upper;
         
-        for(const std_string market: vector<std_string>{"spot", "perps", "testnet_perps"}){
+        for(std_string market: vector<std_string>{"spot", "perps", "testnet_perps"}){
             std_string url = "https://" + markets[market].base_url + "/" + markets[market].endpoint + "/exchangeInfo?symbol=" + markets[market].instrument_upper;
 
             auto r = cpr::Get(cpr::Url{url});
@@ -310,7 +240,7 @@ public:
                     markets[market].apply_min_market = f["applyMinToMarket"].get<bool>();
                 }
 
-                if(f["filterType"] == "MIN_NOTIONAL") { // futures
+                if(f["filterType"] == "MIN_NOTIONAL") { // perps
                     markets[market].min_notional = stod(f["notional"].get<std_string>());
                 }
             }
@@ -410,14 +340,14 @@ public:
 class OrderBook {
 public:
     MarketConfig& config;
-    const std_string market;
+    std_string market;
 
     int64_t last_update_id = 0;
 
     std::map<int64_t, double, greater<>> bids;
     std::map<int64_t, double> asks;
     
-    OrderBook(MarketConfig& config, const std_string market): config(config), market(market) {}
+    OrderBook(MarketConfig& config, std_string market): config(config), market(market) {}
 
     pair<int64_t, double> best_bid(){
         if(bids.empty()) return {0, 0.0};

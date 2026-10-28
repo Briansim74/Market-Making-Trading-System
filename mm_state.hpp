@@ -89,8 +89,7 @@ public:
     OrderBook market_book;
     MarketFeatureState mfs;
     optional<Signal> last_signal;
-
-    const std_string market;
+    std_string market;
 
     double last_mid = 0.0;
     double order_imbalance = 0.0;
@@ -127,7 +126,7 @@ public:
 
     bool initialized = false;
 
-    State(MarketConfig& config, const std_string market) : config(config), market(market), market_book(config, market)
+    State(MarketConfig& config, std_string market) : config(config), market(market), market_book(config, market)
     {
         cash = config.markets[market].initial_cash;
         inventory = config.initial_position;

@@ -826,8 +826,125 @@ public:
         return signal;
     }
 
-    HedgeSignal calculate_hedge(Signal& signal, State& hedge_state){
-        HedgeSignal hedge;
-        return hedge;
+    Signal calculate_hedge(State& maker_state, State& hedge_state){
+
+        auto& book = hedge_state.market_book;
+        
+        auto [bid_tick, bid_size] = book.best_bid();
+        auto [ask_tick, ask_size] = book.best_ask();
+
+        double best_bid = config.from_tick(bid_tick, config.market);
+        double best_ask = config.from_tick(ask_tick, config.market);
+
+        double mid = (best_bid + best_ask) / 2.0;
+
+        // Regime regime = state.get_regime();
+        // Policy policy = detect_regime(regime);
+
+        // auto [fair, microprice] = compute_fair_and_micro(state, policy);
+        // double skew = compute_skew(state, policy);
+
+        // Features features;
+        // features.mid = mid;
+        // features.fair = fair;
+        // features.skew = skew;
+        // features.microprice = microprice;
+        // features.microprice_dev = microprice - mid;
+        // features.spread = best_ask - best_bid;
+        // features.order_imbalance = state.order_imbalance;
+        // features.trade_imbalance = state.trade_imbalance;
+        // features.inventory = state.inventory;
+        // features.volatility = state.get_vol();
+        // features.queue_ahead_bid = state.bid_queue_ahead.second;
+        // features.queue_ahead_ask = state.ask_queue_ahead.second;
+
+        // // -------------------------
+        // // ALPHA STACK
+        // // -------------------------
+        // double struct_delta = compute_struct_delta(features, policy);
+
+        // double micro_signal_delta = compute_micro_signal_delta(features);
+
+        // auto [residual_delta, residual_signal_quality] = compute_residual_delta(state, struct_delta, micro_signal_delta, features, policy);
+
+        // double center = mid + struct_delta + micro_signal_delta + residual_delta;
+        // auto [toxicity, toxicity_signal_quality] = compute_toxicity(state, features);
+        double center = mid;
+        double spread = best_ask - best_bid;
+        double half = spread / 2.0;
+        
+        double bid = center - half;
+        double ask = center + half;
+        double tick = config.markets[config.market].tick_size;
+
+        bid = min(bid, best_bid);
+        ask = max(ask, best_ask);
+
+        if(bid >= ask){
+            bid = best_bid - tick;
+            ask = best_ask + tick;
+        }
+
+        bid = config.normalize_bid(bid, config.market);
+        ask = config.normalize_ask(ask, config.market);
+
+        // double bid_delta = abs(best_bid - state.mfs.prev_best_bid);
+        // double ask_delta = abs(best_ask - state.mfs.prev_best_ask);
+
+        Signal signal;
+        // signal.ts = state.last_depth_ts;
+        // signal.trade_latency = state.trade_latency;
+        // signal.depth_latency = state.depth_latency;
+        // signal.exchange_latency = state.exchange_latency;
+        signal.maker_mid = maker_state.market_book.mid();
+        signal.hedge_mid = mid;
+        // signal.microprice = features.microprice;
+        // signal.microprice_dev = features.microprice_dev;
+        // signal.spread = spread;
+        // signal.best_bid = best_bid;
+        // signal.best_ask = best_ask;
+
+        // signal.order_imbalance = features.order_imbalance;
+        // signal.trade_imbalance = features.trade_imbalance;
+        // signal.volatility = features.volatility;
+        // signal.queue_ahead_bid = features.queue_ahead_bid;
+        // signal.queue_ahead_ask = features.queue_ahead_ask;
+
+        signal.maker_inventory = maker_state.inventory;
+        signal.hedge_inventory = hedge_state.inventory;
+        // signal.realized_pnl = state.realized_pnl;
+        // signal.unrealized_pnl = state.get_unrealized_pnl(mid);
+        // signal.total_pnl = state.get_pnl(mid);
+        // signal.fees_paid = state.fees_paid;
+        // signal.equity = state.cash + state.inventory * mid;
+
+        // signal.fair = features.fair;
+        // signal.skew = features.skew;
+        // signal.struct_delta = struct_delta;
+        // signal.micro_signal_delta = micro_signal_delta;
+        // signal.residual_delta = residual_delta;
+        // signal.reservation = center;
+
+        // signal.regime = policy.regime;
+        // signal.regime_id = policy.regime_id;
+        // signal.regime_prob = policy.regime_prob;
+        // signal.alpha_trade_imb = policy.alpha_trade_imb;
+        // signal.alpha_struct = policy.alpha_struct;
+        // signal.alpha_residual = policy.alpha_residual;
+        // signal.spread_multiplier = policy.spread_multiplier;
+        // signal.inventory_target = policy.inventory_target;
+        // signal.toxicity = toxicity;
+        // signal.residual_signal_quality = residual_signal_quality;
+        // signal.toxicity_signal_quality = toxicity_signal_quality;
+
+        // signal.bid_delta = bid_delta;
+        // signal.ask_delta = ask_delta;
+        // signal.quote_churn = bid_delta + ask_delta;
+
+        signal.my_spread = spread;
+        signal.my_bid = bid;
+        signal.my_ask = ask;
+
+        return signal;
     }
 };

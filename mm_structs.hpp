@@ -170,10 +170,6 @@ struct InstrumentConfig {
     std_string endpoint;
 };
 
-struct HedgeSignal {
-    int i = 0;
-};
-
 struct EventNotifier {
     mutex signal_mtx;
     condition_variable signal_cv;
@@ -289,6 +285,11 @@ struct Toxicity {
 };
 
 struct Signal {
+    double maker_inventory;
+    double hedge_inventory;
+    double maker_mid;
+    double hedge_mid;
+
     int64_t ts;
     int64_t trade_latency;
     int64_t depth_latency;
