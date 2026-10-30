@@ -462,14 +462,14 @@ public:
 
     void on_stream_event_spot(const Stream& stream){
         spot_state.time = stream.local_ts;
-        spot_execution.apply_stream_update(stream);
+        spot_execution.apply_stream_update(stream); // TO ADD HEDGE EXECUTION STREAM CAPABILITY
 
         wait_for_cancel();
         wait_for_flatten();
         
         if(!trading_enabled) return;
 
-        if(config.target_hedge_ratio > 0.0 && config.market != "spot"){
+        if(perps_execution_enabled){
             cout << "perps hedge1\n";
             Signal hedge_signal = strategy.calculate_hedge(spot_state, perps_state);
             perps_execution.place_hedge_quotes(hedge_signal);
@@ -488,7 +488,7 @@ public:
         
         if(!trading_enabled) return;
 
-        if(config.target_hedge_ratio > 0.0 && config.market == "spot"){
+        if(spot_execution_enabled){
             cout << "spot hedge1\n";
             Signal hedge_signal = strategy.calculate_hedge(perps_state, spot_state);
             spot_execution.place_hedge_quotes(hedge_signal);
@@ -559,7 +559,7 @@ public:
 
         if(spot_execution_enabled) spot_execution.cancel_all_orders();
         if(perps_execution_enabled) perps_execution.cancel_all_orders();
-        // cout << "CANCELLING OPEN ORDERS1.1\n";
+
         // spot_execution.cancel_all_orders(); // to be changed to spot + perps
         waiting_for_cancel = true;
         if(config.mode == "stochastic" || config.mode == "replay"){
@@ -644,7 +644,7 @@ public:
     // }
 
     void wait_for_flatten(){
-        // if(waiting_for_flatten && abs(state.inventory) <= 1e-9){
+
         // Already within [-10, +10] USDT
         if(waiting_for_flatten){
             if(spot_execution_enabled && perps_execution_enabled && abs(spot_state.inventory * spot_state.market_book.mid()) <= config.target_notional &&
@@ -940,14 +940,22 @@ public:
 
         if(config.exchange == "binance" && config.market == "spot" && config.mode != "replay"){
             spot_feed = make_unique<BinanceSpotFeed>(config, spot_state, execution_event, spot_recorder, clock);
+
+            if(config.target_hedge_ratio > 0.0){
+                perps_feed = make_unique<BinancePerpsFeed>(config, perps_state, execution_event, perps_recorder, clock, "perps");
+            }
         }
 
         else if(config.exchange == "binance" && config.market == "perps" && config.mode != "replay"){
-            perps_feed = make_unique<BinancePerpsFeed>(config, perps_state, execution_event, perps_recorder, clock);
+            perps_feed = make_unique<BinancePerpsFeed>(config, perps_state, execution_event, perps_recorder, clock, "perps");
+
+            if(config.target_hedge_ratio > 0.0){
+                spot_feed = make_unique<BinanceSpotFeed>(config, spot_state, execution_event, spot_recorder, clock);
+            }
         }
 
         else if(config.exchange == "binance" && config.market == "testnet_perps" && config.mode != "replay"){
-            perps_feed = make_unique<BinancePerpsFeed>(config, perps_state, execution_event, perps_recorder, clock);
+            perps_feed = make_unique<BinancePerpsFeed>(config, perps_state, execution_event, perps_recorder, clock, "testnet_perps");
         }
 
         else if(config.exchange == "binance" && config.market == "spot" && config.mode == "replay"){
@@ -955,7 +963,7 @@ public:
         }
 
         else if(config.exchange == "binance" && config.market == "testnet_perps" && config.mode == "replay"){
-            perps_feed = make_unique<BinancePerpsReplayFeed>(config, perps_state, execution_event, perps_recorder, clock);
+            perps_feed = make_unique<BinancePerpsReplayFeed>(config, perps_state, execution_event, perps_recorder, clock, "testnet_perps");
         }
 
         else if(config.exchange == "polymarket"){

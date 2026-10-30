@@ -148,6 +148,8 @@ struct InstrumentConfig {
     std_string instrument;
     std_string instrument_upper;
 
+    double initial_position;
+    
     double base_spread;
     double base_size;
     double initial_cash;
@@ -289,6 +291,9 @@ struct Signal {
     double hedge_inventory;
     double maker_mid;
     double hedge_mid;
+
+    double my_bid_size;
+    double my_ask_size;
 
     int64_t ts;
     int64_t trade_latency;

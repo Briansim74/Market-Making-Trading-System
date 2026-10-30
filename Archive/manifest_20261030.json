@@ -1,0 +1,88 @@
+{
+  "run_id": 0,
+  "exchange": "binance",
+  "mode": "live",
+  "market": "spot",
+  "hedge": "perps",
+  "models": {
+    "struct_model": "mm-core",
+    "regime_model": "",
+    "micro_signal_model": "",
+    "residual_model": "",
+    "toxicity_model": ""
+  },
+  "spot_instrument": "pepeusdt",
+  "perps_instrument": "1000pepeusdt",
+  "testnet_perps_instrument": "1000pepeusdt",
+
+  "exchange_latency": 0,
+  "gamma": 0.1,
+  "initial_position": 2257336.0,
+  "spot_base_spread": 50.0,
+  "spot_base_size": 1.1,
+  "perps_base_spread": 500.0,
+  "perps_base_size": 5.1,
+  "testnet_perps_base_spread": 100.0,
+  "testnet_perps_base_size": 6.1,
+  "max_inv": 12.5,
+  "target_notional": 10.0,
+
+  "target_hedge_ratio": 1.0,
+
+  "spot_initial_cash": 80.0,
+  "perps_initial_cash": 20.0,
+  "testnet_perps_initial_cash": 20.0,
+  "fees": {
+    "spot_maker_fee_rate": 0.001,
+    "spot_taker_fee_rate": 0.001,
+    "perps_maker_fee_rate": 0.0002,
+    "perps_taker_fee_rate": 0.0005,
+    "testnet_perps_maker_fee_rate": 0.0002,
+    "testnet_perps_taker_fee_rate": 0.0004
+  },
+  "folder_path": "data/runs/run_20260905_123159_live",
+  "dataset" : {
+    "events_chunk" : 200,
+    "snapshots_chunk" : 150,
+    "trades_chunk": 50,
+    "quotes_chunk": 1,
+    "fills_chunk": 1
+  },
+  "speed_multiplier": 200.0,
+  "server_config": {
+    "host": "0.0.0.0",
+    "port": 8000
+  },
+  "performance": {
+    "pnl": 0.0,
+    "sharpe": 0.0,
+    "annualized_sharpe": 0.0,
+    "sortino": 0.0,
+    "annualized_sortino": 0.0,
+    "fees_paid": 0.0,
+    "notional_traded": 0.0,
+    "fees_per_fill": 0.0,
+    "pnl_per_fill": 0.0
+  },
+  "api": {
+    "api_key": "htoMYnNSBcxXG1ULgUX5pao0HKAHJgioRLwxVyIlYwMMBk6nL0cTXlcX5vToeaqA",
+    "api_secret": "X2MXfePmyMgwpjUyOvzrzxMGOQ4EAGCEFdzbKL4NAM5vqjKC3B5e7ayg0fudcLky",
+    "api_key_live": "z91kUkJzGJazAUgl0aJi25wA5ZtpqTFoB1jL4oUpQiKW9kjPHxxsye4qJSWSpIHe",
+    "api_secret_live": "Ay6iygkUqd6FhNi5OlNxNvqmbVB1vx1vxqyLs5PueH79wOAm7fgBdHS477mnKcdA",
+    "spot" : {
+      "hostname": "stream.binance.com",
+      "base_url": "api.binance.com",
+      "endpoint": "api/v3"
+    },
+    "perps" : {
+      "hostname": "fstream.binance.com",
+      "base_url": "fapi.binance.com",
+      "endpoint": "fapi/v1"
+    },
+    "testnet_perps" : {
+      "hostname": "stream.binancefuture.com",
+      "base_url": "testnet.binancefuture.com",
+      "endpoint": "fapi/v1"
+    }
+  }
+}

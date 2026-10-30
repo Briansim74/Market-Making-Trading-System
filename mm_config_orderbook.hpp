@@ -91,6 +91,8 @@ public:
     std_string mode;
     std_string market;
 
+    std_string hedge;
+
     std_string struct_model;
     std_string regime_model;
     std_string micro_signal_model;
@@ -100,9 +102,9 @@ public:
 
     int64_t exchange_latency;
     double gamma;
-    double initial_position;
-    double base_spread;
-    double base_size;
+    // double initial_position;
+    // double base_spread;
+    // double base_size;
     double max_inv;
     double target_notional;
     
@@ -115,6 +117,7 @@ public:
     size_t QUOTES_CHUNK;
     size_t FILLS_CHUNK;
     double speed_multiplier;
+
     std_string host;
     int16_t port;
 
@@ -138,6 +141,9 @@ public:
         mode = params["mode"].get<std_string>();
         market = params["market"].get<std_string>();
 
+
+        hedge = params["hedge"].get<std_string>();
+
         struct_model = params["models"]["struct_model"].get<std_string>();
         regime_model = params["models"]["regime_model"].get<std_string>();
         micro_signal_model = params["models"]["micro_signal_model"].get<std_string>();
@@ -147,47 +153,73 @@ public:
 
         target_hedge_ratio = params["target_hedge_ratio"].get<double>();
 
+        markets[market].instrument = params[market + "_instrument"].get<std_string>();
+        markets[market].instrument_upper = markets[market].instrument;
+        transform(markets[market].instrument_upper.begin(), markets[market].instrument_upper.end(), markets[market].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
+        markets[market].initial_position = params[market + "_initial_position"].get<double>();
+        markets[market].base_spread = params[market + "_base_spread"].get<double>();
+        markets[market].base_size = params[market + "_base_size"].get<double>();
+        markets[market].initial_cash = params[market + "_initial_cash"].get<double>();
+        markets[market].maker_fee_rate = params["fees"][market + "_maker_fee_rate"].get<double>();
+        markets[market].taker_fee_rate = params["fees"][market + "_taker_fee_rate"].get<double>();
+        markets[market].hostname = params["api"][market]["hostname"].get<std_string>();
+        markets[market].base_url = params["api"][market]["base_url"].get<std_string>();
+        markets[market].endpoint = params["api"][market]["endpoint"].get<std_string>();
+
+        markets[hedge].instrument = params[hedge + "_instrument"].get<std_string>();
+        markets[hedge].instrument_upper = markets[hedge].instrument;
+        transform(markets[hedge].instrument_upper.begin(), markets[hedge].instrument_upper.end(), markets[hedge].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
+        markets[hedge].initial_position = params[hedge + "_initial_position"].get<double>();
+        markets[hedge].base_spread = params[hedge + "_base_spread"].get<double>();
+        markets[hedge].base_size = params[hedge + "_base_size"].get<double>();
+        markets[hedge].initial_cash = params[hedge + "_initial_cash"].get<double>();
+        markets[hedge].maker_fee_rate = params["fees"][hedge + "_maker_fee_rate"].get<double>();
+        markets[hedge].taker_fee_rate = params["fees"][hedge + "_taker_fee_rate"].get<double>();
+        markets[hedge].hostname = params["api"][hedge]["hostname"].get<std_string>();
+        markets[hedge].base_url = params["api"][hedge]["base_url"].get<std_string>();
+        markets[hedge].endpoint = params["api"][hedge]["endpoint"].get<std_string>();
 
 
-        markets["spot"].instrument = params["spot_instrument"].get<std_string>();
-        markets["spot"].instrument_upper = markets["spot"].instrument;
-        transform(markets["spot"].instrument_upper.begin(), markets["spot"].instrument_upper.end(), markets["spot"].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
-        markets["spot"].base_spread = params["spot_base_spread"].get<double>();
-        markets["spot"].base_size = params["spot_base_size"].get<double>();
-        markets["spot"].initial_cash = params["spot_initial_cash"].get<double>();
-        markets["spot"].maker_fee_rate = params["fees"]["spot_maker_fee_rate"].get<double>();
-        markets["spot"].taker_fee_rate = params["fees"]["spot_taker_fee_rate"].get<double>();
-        markets["spot"].hostname = params["api"]["spot"]["hostname"].get<std_string>();
-        markets["spot"].base_url = params["api"]["spot"]["base_url"].get<std_string>();
-        markets["spot"].endpoint = params["api"]["spot"]["endpoint"].get<std_string>();
 
-        markets["perps"].instrument = params["perps_instrument"].get<std_string>();
-        markets["perps"].instrument_upper = markets["perps"].instrument;
-        transform(markets["perps"].instrument_upper.begin(), markets["perps"].instrument_upper.end(), markets["perps"].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
-        markets["perps"].base_spread = params["perps_base_spread"].get<double>();
-        markets["perps"].base_size = params["perps_base_size"].get<double>();
-        markets["perps"].initial_cash = params["perps_initial_cash"].get<double>();
-        markets["perps"].maker_fee_rate = params["fees"]["perps_maker_fee_rate"].get<double>();
-        markets["perps"].taker_fee_rate = params["fees"]["perps_taker_fee_rate"].get<double>();
-        markets["perps"].hostname = params["api"]["perps"]["hostname"].get<std_string>();
-        markets["perps"].base_url = params["api"]["perps"]["base_url"].get<std_string>();
-        markets["perps"].endpoint = params["api"]["perps"]["endpoint"].get<std_string>();
+        // markets["spot"].instrument = params["spot_instrument"].get<std_string>();
+        // markets["spot"].instrument_upper = markets["spot"].instrument;
+        // transform(markets["spot"].instrument_upper.begin(), markets["spot"].instrument_upper.end(), markets["spot"].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
+        // markets["spot"].base_spread = params["spot_base_spread"].get<double>();
+        // markets["spot"].base_size = params["spot_base_size"].get<double>();
+        // markets["spot"].initial_cash = params["spot_initial_cash"].get<double>();
+        // markets["spot"].maker_fee_rate = params["fees"]["spot_maker_fee_rate"].get<double>();
+        // markets["spot"].taker_fee_rate = params["fees"]["spot_taker_fee_rate"].get<double>();
+        // markets["spot"].hostname = params["api"]["spot"]["hostname"].get<std_string>();
+        // markets["spot"].base_url = params["api"]["spot"]["base_url"].get<std_string>();
+        // markets["spot"].endpoint = params["api"]["spot"]["endpoint"].get<std_string>();
 
-        markets["testnet_perps"].instrument = params["testnet_perps_instrument"].get<std_string>();
-        markets["testnet_perps"].instrument_upper = markets["testnet_perps"].instrument;
-        transform(markets["testnet_perps"].instrument_upper.begin(), markets["testnet_perps"].instrument_upper.end(), markets["testnet_perps"].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
-        markets["testnet_perps"].base_spread = params["testnet_perps_base_spread"].get<double>();
-        markets["testnet_perps"].base_size = params["testnet_perps_base_size"].get<double>();
-        markets["testnet_perps"].initial_cash = params["testnet_perps_initial_cash"].get<double>();
-        markets["testnet_perps"].maker_fee_rate = params["fees"]["testnet_perps_maker_fee_rate"].get<double>();
-        markets["testnet_perps"].taker_fee_rate = params["fees"]["testnet_perps_taker_fee_rate"].get<double>();
-        markets["testnet_perps"].hostname = params["api"]["testnet_perps"]["hostname"].get<std_string>();
-        markets["testnet_perps"].base_url = params["api"]["testnet_perps"]["base_url"].get<std_string>();
-        markets["testnet_perps"].endpoint = params["api"]["testnet_perps"]["endpoint"].get<std_string>();
+        // markets["perps"].instrument = params["perps_instrument"].get<std_string>();
+        // markets["perps"].instrument_upper = markets["perps"].instrument;
+        // transform(markets["perps"].instrument_upper.begin(), markets["perps"].instrument_upper.end(), markets["perps"].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
+        // markets["perps"].base_spread = params["perps_base_spread"].get<double>();
+        // markets["perps"].base_size = params["perps_base_size"].get<double>();
+        // markets["perps"].initial_cash = params["perps_initial_cash"].get<double>();
+        // markets["perps"].maker_fee_rate = params["fees"]["perps_maker_fee_rate"].get<double>();
+        // markets["perps"].taker_fee_rate = params["fees"]["perps_taker_fee_rate"].get<double>();
+        // markets["perps"].hostname = params["api"]["perps"]["hostname"].get<std_string>();
+        // markets["perps"].base_url = params["api"]["perps"]["base_url"].get<std_string>();
+        // markets["perps"].endpoint = params["api"]["perps"]["endpoint"].get<std_string>();
+
+        // markets["testnet_perps"].instrument = params["testnet_perps_instrument"].get<std_string>();
+        // markets["testnet_perps"].instrument_upper = markets["testnet_perps"].instrument;
+        // transform(markets["testnet_perps"].instrument_upper.begin(), markets["testnet_perps"].instrument_upper.end(), markets["testnet_perps"].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
+        // markets["testnet_perps"].base_spread = params["testnet_perps_base_spread"].get<double>();
+        // markets["testnet_perps"].base_size = params["testnet_perps_base_size"].get<double>();
+        // markets["testnet_perps"].initial_cash = params["testnet_perps_initial_cash"].get<double>();
+        // markets["testnet_perps"].maker_fee_rate = params["fees"]["testnet_perps_maker_fee_rate"].get<double>();
+        // markets["testnet_perps"].taker_fee_rate = params["fees"]["testnet_perps_taker_fee_rate"].get<double>();
+        // markets["testnet_perps"].hostname = params["api"]["testnet_perps"]["hostname"].get<std_string>();
+        // markets["testnet_perps"].base_url = params["api"]["testnet_perps"]["base_url"].get<std_string>();
+        // markets["testnet_perps"].endpoint = params["api"]["testnet_perps"]["endpoint"].get<std_string>();
 
         exchange_latency = params["exchange_latency"].get<int64_t>();
         gamma = params["gamma"].get<double>();
-        initial_position = params["initial_position"].get<double>();
+        // initial_position = params["initial_position"].get<double>();
         max_inv = params["max_inv"].get<double>();
         target_notional = params["target_notional"].get<double>();
 
@@ -204,82 +236,165 @@ public:
         api_key = (mode == "live") ? params["api"]["api_key_live"].get<std_string>() : params["api"]["api_key"].get<std_string>();
         api_secret = (mode == "live") ? params["api"]["api_secret_live"].get<std_string>() : params["api"]["api_secret"].get<std_string>();
         
-        for(std_string market: vector<std_string>{"spot", "perps", "testnet_perps"}){
-            std_string url = "https://" + markets[market].base_url + "/" + markets[market].endpoint + "/exchangeInfo?symbol=" + markets[market].instrument_upper;
+        std_string url = "https://" + markets[market].base_url + "/" + markets[market].endpoint + "/exchangeInfo?symbol=" + markets[market].instrument_upper;
 
-            auto r = cpr::Get(cpr::Url{url});
-            auto data = json::parse(r.text);
-            json filters;
+        auto r = cpr::Get(cpr::Url{url});
+        auto data = json::parse(r.text);
+        json filters;
+        
+        if(market != "spot"){
+            for(auto& symbol_entry: data["symbols"]){
+                if(symbol_entry["symbol"] == markets[market].instrument_upper){
+                    filters = symbol_entry["filters"];
+                    break;
+                }
+            }
+        }
+        else filters = data["symbols"][0]["filters"];
+
+        for(auto& f: filters){
+            if(f["filterType"] == "PRICE_FILTER"){
+                markets[market].tick_size = stod(f["tickSize"].get<std_string>());
+                markets[market].price_precision = get_precision(markets[market].tick_size);
+            }
+
+            if(f["filterType"] == "LOT_SIZE"){
+                markets[market].step_size = stod(f["stepSize"].get<std_string>());
+                markets[market].qty_precision   = get_precision(markets[market].step_size);
+
+                markets[market].min_qty = stod(f["minQty"].get<std_string>());
+                markets[market].max_qty = stod(f["maxQty"].get<std_string>());
+            }
+
+            if(f["filterType"] == "NOTIONAL") { // spot
+                markets[market].min_notional = stod(f["minNotional"].get<std_string>());
+                markets[market].apply_min_market = f["applyMinToMarket"].get<bool>();
+            }
+
+            if(f["filterType"] == "MIN_NOTIONAL") { // perps
+                markets[market].min_notional = stod(f["notional"].get<std_string>());
+            }
+        }
+
+        url = "https://" + markets[hedge].base_url + "/" + markets[hedge].endpoint + "/exchangeInfo?symbol=" + markets[hedge].instrument_upper;
+
+        r = cpr::Get(cpr::Url{url});
+        data = json::parse(r.text);
+        // json filters;
+        
+        if(hedge != "spot"){
+            for(auto& symbol_entry: data["symbols"]){
+                if(symbol_entry["symbol"] == markets[hedge].instrument_upper){
+                    filters = symbol_entry["filters"];
+                    break;
+                }
+            }
+        }
+        else filters = data["symbols"][0]["filters"];
+
+        for(auto& f: filters){
+            if(f["filterType"] == "PRICE_FILTER"){
+                markets[hedge].tick_size = stod(f["tickSize"].get<std_string>());
+                markets[hedge].price_precision = get_precision(markets[hedge].tick_size);
+            }
+
+            if(f["filterType"] == "LOT_SIZE"){
+                markets[hedge].step_size = stod(f["stepSize"].get<std_string>());
+                markets[hedge].qty_precision   = get_precision(markets[hedge].step_size);
+
+                markets[hedge].min_qty = stod(f["minQty"].get<std_string>());
+                markets[hedge].max_qty = stod(f["maxQty"].get<std_string>());
+            }
+
+            if(f["filterType"] == "NOTIONAL") { // spot
+                markets[hedge].min_notional = stod(f["minNotional"].get<std_string>());
+                markets[hedge].apply_min_market = f["applyMinToMarket"].get<bool>();
+            }
+
+            if(f["filterType"] == "MIN_NOTIONAL") { // perps
+                markets[hedge].min_notional = stod(f["notional"].get<std_string>());
+            }
+        }
             
-            if(market != "spot"){
-                for(auto& symbol_entry: data["symbols"]){
-                    if(symbol_entry["symbol"] == markets[market].instrument_upper){
-                        filters = symbol_entry["filters"];
-                        break;
-                    }
-                }
-            }
-            else filters = data["symbols"][0]["filters"];
 
-            for(auto& f: filters){
-                if(f["filterType"] == "PRICE_FILTER"){
-                    markets[market].tick_size = stod(f["tickSize"].get<std_string>());
-                    markets[market].price_precision = get_precision(markets[market].tick_size);
-                }
+        cout << "\n===== MARKET CONFIG =====\n";
+        cout << "exchange:          " << exchange + "_" + market << "\n";
+        cout << "mode:              " << mode << "\n";
+        cout << "market:            " << market << "\n";
+        cout << "instrument:        " << markets[market].instrument << "\n";
+        cout << "instrument_upper:  " << markets[market].instrument_upper << "\n";
 
-                if(f["filterType"] == "LOT_SIZE"){
-                    markets[market].step_size = stod(f["stepSize"].get<std_string>());
-                    markets[market].qty_precision   = get_precision(markets[market].step_size);
+        cout << "\n===== MODEL CONFIG =====\n";
+        cout << "struct_model:       " << struct_model << "\n";
+        cout << "regime_model:       " << regime_model << "\n";
+        cout << "micro_signal_model: " << micro_signal_model << "\n";
+        cout << "residual_model:     " << residual_model << "\n";
+        cout << "toxicity_model:     " << toxicity_model << "\n";
 
-                    markets[market].min_qty = stod(f["minQty"].get<std_string>());
-                    markets[market].max_qty = stod(f["maxQty"].get<std_string>());
-                }
+        cout << "\n===== STRATEGY CONFIG =====\n";
+        cout << "exchange_latency:   " << exchange_latency << "\n";
+        cout << "gamma:              " << gamma << "\n";
+        cout << "initial_position:   " << markets[market].initial_position << "\n";
+        cout << "base_spread:        " << markets[market].base_spread << "\n";
+        cout << "base_size:          " << markets[market].base_size << "\n";
+        cout << "max_inv:            " << max_inv << "\n";
+        cout << "target_notional:    " << target_notional << "\n";
+        cout << "initial_cash:       " << markets[market].initial_cash << "\n";
+        cout << "maker_fee_rate:     " << markets[market].maker_fee_rate << "\n";
+        cout << "taker_fee_rate:     " << markets[market].taker_fee_rate << "\n";
 
-                if(f["filterType"] == "NOTIONAL") { // spot
-                    markets[market].min_notional = stod(f["minNotional"].get<std_string>());
-                    markets[market].apply_min_market = f["applyMinToMarket"].get<bool>();
-                }
+        cout << "\n===== EXECUTION CONFIG =====\n";
+        cout << "tick_size:          " << markets[market].tick_size << "\n";
+        cout << "price_precision:    " << markets[market].price_precision << "\n";
+        cout << "step_size:          " << markets[market].step_size << "\n";
+        cout << "qty_precision:      " << markets[market].qty_precision << "\n";
+        cout << "min_qty:            " << markets[market].min_qty << "\n";
+        cout << "max_qty:            " << markets[market].max_qty << "\n";
+        cout << "min_notional_USDT:  " << markets[market].min_notional << "\n";
+        cout << "apply_min_market:   " << boolalpha << markets[market].apply_min_market << "\n";
 
-                if(f["filterType"] == "MIN_NOTIONAL") { // perps
-                    markets[market].min_notional = stod(f["notional"].get<std_string>());
-                }
-            }
+        cout << "\n===== STORAGE CONFIG =====\n";
+        cout << "folder_path:        " << folder_path << "\n";
+        cout << "events_chunk:       " << EVENTS_CHUNK << "\n";
+        cout << "snapshots_chunk:    " << SNAPSHOTS_CHUNK << "\n";
+        cout << "trades_chunk:       " << TRADES_CHUNK << "\n";
+        cout << "quotes_chunk:       " << QUOTES_CHUNK << "\n";
+        cout << "fills_chunk:        " << FILLS_CHUNK << "\n";
 
-            cout << "\n===== MARKET CONFIG =====\n";
-            cout << "exchange:          " << exchange + "_" + market << "\n";
+        cout << "\n===== HTTP CONFIG =====\n";
+        cout << "host:               " << host << "\n";
+        cout << "port:               " << port << "\n";
+        cout << "hostname:           " << markets[market].hostname << "\n";
+        cout << "base_url:           " << markets[market].base_url << "\n";
+        cout << "endpoint:           " << markets[market].endpoint << "\n";
+
+        cout << "================================\n\n";
+
+        if(target_hedge_ratio > 0.0){
+
+            cout << "\n===== HEDGE CONFIG =====\n";
+            cout << "exchange:          " << exchange + "_" + hedge << "\n";
             cout << "mode:              " << mode << "\n";
-            cout << "market:            " << market << "\n";
-            cout << "instrument:        " << markets[market].instrument << "\n";
-            cout << "instrument_upper:  " << markets[market].instrument_upper << "\n";
+            cout << "hedge:            " << hedge << "\n";
+            cout << "instrument:        " << markets[hedge].instrument << "\n";
+            cout << "instrument_upper:  " << markets[hedge].instrument_upper << "\n";
 
-            cout << "\n===== MODEL CONFIG =====\n";
-            cout << "struct_model:       " << struct_model << "\n";
-            cout << "regime_model:       " << regime_model << "\n";
-            cout << "micro_signal_model: " << micro_signal_model << "\n";
-            cout << "residual_model:     " << residual_model << "\n";
-            cout << "toxicity_model:     " << toxicity_model << "\n";
-
-            cout << "\n===== STRATEGY CONFIG =====\n";
-            cout << "exchange_latency:   " << exchange_latency << "\n";
-            cout << "gamma:              " << gamma << "\n";
-            cout << "initial_position:   " << initial_position << "\n";
-            cout << "base_spread:        " << markets[market].base_spread << "\n";
-            cout << "base_size:          " << markets[market].base_size << "\n";
-            cout << "max_inv:            " << max_inv << "\n";
-            cout << "target_notional:    " << target_notional << "\n";
-            cout << "initial_cash:       " << markets[market].initial_cash << "\n";
-            cout << "maker_fee_rate:     " << markets[market].maker_fee_rate << "\n";
-            cout << "taker_fee_rate:     " << markets[market].taker_fee_rate << "\n";
+            cout << "initial_position:   " << markets[hedge].initial_position << "\n";
+            cout << "base_spread:        " << markets[hedge].base_spread << "\n";
+            cout << "base_size:          " << markets[hedge].base_size << "\n";
+            cout << "initial_cash:       " << markets[hedge].initial_cash << "\n";
+            cout << "maker_fee_rate:     " << markets[hedge].maker_fee_rate << "\n";
+            cout << "taker_fee_rate:     " << markets[hedge].taker_fee_rate << "\n";
 
             cout << "\n===== EXECUTION CONFIG =====\n";
-            cout << "tick_size:          " << markets[market].tick_size << "\n";
-            cout << "price_precision:    " << markets[market].price_precision << "\n";
-            cout << "step_size:          " << markets[market].step_size << "\n";
-            cout << "qty_precision:      " << markets[market].qty_precision << "\n";
-            cout << "min_qty:            " << markets[market].min_qty << "\n";
-            cout << "max_qty:            " << markets[market].max_qty << "\n";
-            cout << "min_notional_USDT:  " << markets[market].min_notional << "\n";
-            cout << "apply_min_market:   " << boolalpha << markets[market].apply_min_market << "\n";
+            cout << "tick_size:          " << markets[hedge].tick_size << "\n";
+            cout << "price_precision:    " << markets[hedge].price_precision << "\n";
+            cout << "step_size:          " << markets[hedge].step_size << "\n";
+            cout << "qty_precision:      " << markets[hedge].qty_precision << "\n";
+            cout << "min_qty:            " << markets[hedge].min_qty << "\n";
+            cout << "max_qty:            " << markets[hedge].max_qty << "\n";
+            cout << "min_notional_USDT:  " << markets[hedge].min_notional << "\n";
+            cout << "apply_min_market:   " << boolalpha << markets[hedge].apply_min_market << "\n";
 
             cout << "\n===== STORAGE CONFIG =====\n";
             cout << "folder_path:        " << folder_path << "\n";
@@ -292,12 +407,12 @@ public:
             cout << "\n===== HTTP CONFIG =====\n";
             cout << "host:               " << host << "\n";
             cout << "port:               " << port << "\n";
-            cout << "hostname:           " << markets[market].hostname << "\n";
-            cout << "base_url:           " << markets[market].base_url << "\n";
-            cout << "endpoint:           " << markets[market].endpoint << "\n";
+            cout << "hostname:           " << markets[hedge].hostname << "\n";
+            cout << "base_url:           " << markets[hedge].base_url << "\n";
+            cout << "endpoint:           " << markets[hedge].endpoint << "\n";
 
             cout << "================================\n\n";
-            }
+        }
     }
 
     int64_t to_tick(const double& price, const std_string& market) const {

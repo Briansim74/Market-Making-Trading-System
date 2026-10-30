@@ -129,7 +129,8 @@ public:
     State(MarketConfig& config, std_string market) : config(config), market(market), market_book(config, market)
     {
         cash = config.markets[market].initial_cash;
-        inventory = config.initial_position;
+        // cout << "state init market book mid: " << market_book.mid() << "\n";
+        inventory = config.markets[market].initial_position;
     }
 
     double get_vol(){

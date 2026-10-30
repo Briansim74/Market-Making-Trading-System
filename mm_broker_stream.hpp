@@ -134,7 +134,7 @@ public:
             beast::error_code ec;
             http::response<http::string_body> res;
 
-            cout << "[HTTP] - ATTEMPT " << attempt << "\n";
+            // cout << "[HTTP] - ATTEMPT " << attempt << "\n";
 
             {
                 lock_guard<mutex> lock(http_mtx);
@@ -182,7 +182,7 @@ public:
             cout << "\n===== HTTP RESPONSE END =====\n";
             return res.body();
         }
-        return "request failed";
+        return "http error";
     }
 };
 
@@ -207,7 +207,6 @@ public:
     BinanceSpotBroker(MarketConfig& config, BinanceClock& clock)
         : config(config), clock(clock), http(config, "spot")
         {
-            cout << "broker init\n";
             http.initialize();
             get_fee_rates();
         }
@@ -434,7 +433,7 @@ public:
         // READ LOOP
         // -------------------------------------------------
         beast::flat_buffer buffer;
-        cout << "user stream1\n";
+
         while(running){
             boost::system::error_code ec;
             ws->read(buffer, ec);
@@ -513,7 +512,7 @@ public:
     }
 
     void stop(){
-        cout << "STOPPING USER STREAM\n";
+        cout << "STOPPING SPOT USER STREAM\n";
         running = false;
 
         boost::system::error_code ec;
@@ -521,7 +520,7 @@ public:
 
         if(stream_thread.joinable()) stream_thread.join();
 
-        cout << "USER STREAM STOPPED\n";
+        cout << "SPOT USER STREAM STOPPED\n";
     }
 
     void on_message(const std_string& msg){
@@ -841,7 +840,7 @@ public:
     }
 
     void stop(){
-        cout << "STOPPING USER STREAM\n";
+        cout << "STOPPING PERPS USER STREAM\n";
         running = false;
 
         boost::system::error_code ec;
@@ -849,14 +848,14 @@ public:
 
         if(stream_thread.joinable()) stream_thread.join();
 
-        cout << "USER STREAM STOPPED\n";
+        cout << "PERPS USER STREAM STOPPED\n";
     }
 
     void on_message(const std_string& msg){
 
         simdjson::padded_string json(msg);
         auto doc = parser.iterate(json);
-
+        cout << "PERPS STREAM: " << msg << "\n";
         if(std_string(doc["e"]) != "ORDER_TRADE_UPDATE") return;
         cout << msg << "\n";
 

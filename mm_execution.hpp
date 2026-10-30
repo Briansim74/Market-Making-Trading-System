@@ -204,56 +204,6 @@ public:
         state.trade_imbalance = alpha * flow + (1 - alpha) * state.trade_imbalance;
     }
 
-    pair<double, double> compute_order_size(const Signal& signal){
-
-        // Convert inventory to USDT notional for risk calculations.
-        double inv_usdt = signal.inventory * signal.mid; // USDT per PEPE
-
-        // Inventory scale should be in USDT, not PEPE quantity.
-        double inv_scale_usdt = 1.0; // strongly reduce bid/ask size at 1usdt long/short to go to flat inv
-        double inv_signal = tanh(inv_usdt / inv_scale_usdt);
-
-        double bid_multiplier = exp(-inv_signal);
-        double ask_multiplier = exp(inv_signal);
-
-        // Also preferably make this USDT-based.
-        double vol_penalty = 1.0 / (1.0 + 50.0 * signal.volatility);
-        double risk_penalty = exp(-0.2 * pow(inv_usdt / inv_scale_usdt, 2));
-        double toxicity_penalty = exp(-signal.toxicity.k_order_size * signal.toxicity.tox); //negative markout translates into positive exp
-
-        // Size is USDT notional.
-        double size_usdt = config.markets[market].base_size * vol_penalty * risk_penalty * toxicity_penalty;
-
-        // if(size_usdt < 0.5 * config.markets[market].base_size) return {0.0, 0.0}; // risk guard to prevent toxic order size
-
-        // Exchange minimum is 1 USDT.
-        size_usdt = max(config.markets[market].base_size, min(size_usdt, 1.5 * config.markets[market].base_size)); // max 1.5 base size usdt per order
-
-        double bid_size_usdt = size_usdt * bid_multiplier;
-        double ask_size_usdt = size_usdt * ask_multiplier;
-
-        // Inventory limits in USDT.
-        double max_buy_usdt = max(0.0, config.max_inv - inv_usdt); // NEW RISK GUARD HERE, PREVENT EXCEEDING MARGIN
-        double max_sell_usdt = max(0.0, config.max_inv + inv_usdt);
-
-        bid_size_usdt = min(bid_size_usdt, max_buy_usdt);
-        ask_size_usdt = min(ask_size_usdt, max_sell_usdt);
-
-        // Convert USDT notional -> PEPE quantity.
-        double bid_size = bid_size_usdt / signal.mid;
-        double ask_size = ask_size_usdt / signal.mid;
-
-        // exchange LOT_SIZE normalization
-        bid_size = config.normalize_qty(bid_size, market);
-        ask_size = config.normalize_qty(ask_size, market);
-
-        // Re-check actual notional AFTER normalization.
-        if(bid_size_usdt < config.markets[market].base_size) bid_size = 0.0;
-        if(ask_size_usdt < config.markets[market].base_size) ask_size = 0.0;
-
-        return {bid_size, ask_size};
-    }
-
     Order* get_open_order(const std_string& side) override {     
         for(auto& [client_oid, order]: open_orders) if(order.side == side) return &order;
         return nullptr;
@@ -357,7 +307,9 @@ public:
         double desired_bid = signal.my_bid;
         double desired_ask = signal.my_ask;
 
-        auto [bid_size, ask_size] = compute_order_size(signal);
+        double bid_size = signal.my_bid_size;
+        double ask_size = signal.my_ask_size;
+
         double tick = config.markets[market].tick_size;
 
         Order* bid_order = get_open_order("BUY");
@@ -409,10 +361,7 @@ public:
         }
     }
 
-
-
     void place_hedge_quotes(const Signal&) override {}
-
 
     void match_side(const Trade& trade){
 
@@ -622,58 +571,58 @@ public:
         state.trade_imbalance = alpha * flow + (1 - alpha) * state.trade_imbalance;
     }
 
-    pair<double, double> compute_order_size(const Signal& signal){
+    // pair<double, double> compute_order_size(const Signal& signal){
 
-        // Convert inventory to USDT notional for risk calculations.
-        double inv_usdt = signal.inventory * signal.mid; // USDT per PEPE
+    //     // Convert inventory to USDT notional for risk calculations.
+    //     double inv_usdt = signal.inventory * signal.mid; // USDT per PEPE
 
-        // Inventory scale should be in USDT, not PEPE quantity.
-        double inv_scale_usdt = 1.0; // strongly reduce bid/ask size at 1usdt long/short to go to flat inv
-        double inv_signal = tanh(inv_usdt / inv_scale_usdt);
+    //     // Inventory scale should be in USDT, not PEPE quantity.
+    //     double inv_scale_usdt = 1.0; // strongly reduce bid/ask size at 1usdt long/short to go to flat inv
+    //     double inv_signal = tanh(inv_usdt / inv_scale_usdt);
 
-        double bid_multiplier = exp(-inv_signal);
-        double ask_multiplier = exp(inv_signal);
+    //     double bid_multiplier = exp(-inv_signal);
+    //     double ask_multiplier = exp(inv_signal);
 
-        // Also preferably make this USDT-based.
-        double vol_penalty = 1.0 / (1.0 + 50.0 * signal.volatility);
-        double risk_penalty = exp(-0.2 * pow(inv_usdt / inv_scale_usdt, 2));
-        double toxicity_penalty = exp(-signal.toxicity.k_order_size * signal.toxicity.tox); //negative markout translates into positive exp
+    //     // Also preferably make this USDT-based.
+    //     double vol_penalty = 1.0 / (1.0 + 50.0 * signal.volatility);
+    //     double risk_penalty = exp(-0.2 * pow(inv_usdt / inv_scale_usdt, 2));
+    //     double toxicity_penalty = exp(-signal.toxicity.k_order_size * signal.toxicity.tox); //negative markout translates into positive exp
 
-        // Size is USDT notional.
-        double size_usdt = config.markets[market].base_size * vol_penalty * risk_penalty * toxicity_penalty;
+    //     // Size is USDT notional.
+    //     double size_usdt = config.markets[market].base_size * vol_penalty * risk_penalty * toxicity_penalty;
 
-        // if(size_usdt < 0.5 * config.markets[market].base_size) return {0.0, 0.0}; // risk guard to prevent toxic order size
+    //     // if(size_usdt < 0.5 * config.markets[market].base_size) return {0.0, 0.0}; // risk guard to prevent toxic order size
 
-        // Exchange minimum is 1 USDT.
-        size_usdt = max(config.markets[market].base_size, min(size_usdt, 1.5 * config.markets[market].base_size)); // max 1.5 base size usdt per order
+    //     // Exchange minimum is 1 USDT.
+    //     size_usdt = max(config.markets[market].base_size, min(size_usdt, 1.5 * config.markets[market].base_size)); // max 1.5 base size usdt per order
 
-        double bid_size_usdt = size_usdt * bid_multiplier;
-        double ask_size_usdt = size_usdt * ask_multiplier;
+    //     double bid_size_usdt = size_usdt * bid_multiplier;
+    //     double ask_size_usdt = size_usdt * ask_multiplier;
         
-        // Inventory limits in USDT.
-        double max_buy_usdt = max(0.0, config.max_inv - inv_usdt); // NEW RISK GUARD HERE, PREVENT EXCEEDING MARGIN
-        double max_sell_usdt = max(0.0, config.max_inv + inv_usdt);
+    //     // Inventory limits in USDT.
+    //     double max_buy_usdt = max(0.0, config.max_inv - inv_usdt); // NEW RISK GUARD HERE, PREVENT EXCEEDING MARGIN
+    //     double max_sell_usdt = max(0.0, config.max_inv + inv_usdt);
 
-        bid_size_usdt = min(bid_size_usdt, max_buy_usdt);
-        ask_size_usdt = min(ask_size_usdt, max_sell_usdt);
+    //     bid_size_usdt = min(bid_size_usdt, max_buy_usdt);
+    //     ask_size_usdt = min(ask_size_usdt, max_sell_usdt);
 
-        // Convert USDT notional -> PEPE quantity.
-        double bid_size = bid_size_usdt / signal.mid;
-        double ask_size = ask_size_usdt / signal.mid;
+    //     // Convert USDT notional -> PEPE quantity.
+    //     double bid_size = bid_size_usdt / signal.mid;
+    //     double ask_size = ask_size_usdt / signal.mid;
 
-        // exchange LOT_SIZE normalization
-        bid_size = config.normalize_qty(bid_size, market);
-        ask_size = config.normalize_qty(ask_size, market);
+    //     // exchange LOT_SIZE normalization
+    //     bid_size = config.normalize_qty(bid_size, market);
+    //     ask_size = config.normalize_qty(ask_size, market);
 
-        // Re-check actual notional AFTER normalization.
-        if(bid_size_usdt < config.markets[market].base_size) bid_size = 0.0;
-        if(ask_size_usdt < config.markets[market].base_size) ask_size = 0.0;
+    //     // Re-check actual notional AFTER normalization.
+    //     if(bid_size_usdt < config.markets[market].base_size) bid_size = 0.0;
+    //     if(ask_size_usdt < config.markets[market].base_size) ask_size = 0.0;
 
-        // cout << "bid_size: " << bid_size << "\n";
-        // cout << "ask_size: " << ask_size << "\n";
+    //     // cout << "bid_size: " << bid_size << "\n";
+    //     // cout << "ask_size: " << ask_size << "\n";
 
-        return {bid_size, ask_size};
-    }
+    //     return {bid_size, ask_size};
+    // }
 
     Order* get_open_order(const std_string& side) override {     
         for(auto& [client_oid, order]: open_orders) if(order.side == side) return &order;
@@ -745,7 +694,7 @@ public:
 
         // Already within [-10, +10] USDT
         if(abs(pos_notional) <= config.target_notional){
-            cout << "[BROKER] - Position already within +/- " << config.target_notional << " USDT: " << pos_notional << " USDT\n";
+            cout << "[BROKER] - Position already within target notional: +/- " << config.target_notional << " USDT: " << pos_notional << " USDT\n";
             return;
         }
 
@@ -828,7 +777,9 @@ public:
         double desired_bid = signal.my_bid;
         double desired_ask = signal.my_ask;
 
-        auto [bid_size, ask_size] = compute_order_size(signal);
+        double bid_size = signal.my_bid_size;
+        double ask_size = signal.my_ask_size;
+
         double tick = config.markets[market].tick_size;
 
         Order* bid_order = get_open_order("BUY");
@@ -862,76 +813,14 @@ public:
         }
     }
 
-    pair<double, double> compute_order_size_hedge(const Signal& signal){
-
-        // Convert inventory to USDT notional for risk calculations.
-        double inv_usdt = signal.maker_inventory * signal.maker_mid; // USDT per PEPE for maker state
-        
-        double hedge_inv_usdt = signal.hedge_inventory * signal.hedge_mid; // USDT per PEPE for maker state, equal to 1000 contracts already?
-
-        cout << "maker inv usdt: " << inv_usdt << " hedge inv usdt: " << hedge_inv_usdt << "\n";
-
-        double target_hedge_gate = 5.0;
-        // if(abs(inv_usdt) < target_hedge_gate) return; // no need hedge
-
-        double hedge_usdt = abs(config.target_hedge_ratio * inv_usdt);
-
-        cout << "how much of hedge usdt to cover: " << hedge_usdt << " fraction: " << config.target_hedge_ratio << "\n";
-
-        double overall_hedge_outstanding_usdt = hedge_usdt + hedge_inv_usdt;
-        cout << "target hedge gate: " << target_hedge_gate << "\n";
-        cout << "hedge_usdt: " << hedge_usdt << " hedge inv usdt: " << hedge_inv_usdt << "\n";
-        cout << "overall hedge still needed to cover: " << overall_hedge_outstanding_usdt << "\n";
-        if(overall_hedge_outstanding_usdt < target_hedge_gate) return {0.0, 0.0}; // no need hedge
-
-        hedge_usdt = overall_hedge_outstanding_usdt;
-
-
-
-
-
-        // Exchange minimum is 5 USDT. -1000PEPEUSDT
-        hedge_usdt = max(config.markets[market].base_size, min(hedge_usdt, config.markets[market].base_size)); // max 1.5 base size usdt per order
-        cout << "hedge usdt1: " << hedge_usdt << "\n";
-        // Inventory limits in USDT.
-        if(inv_usdt > 0.0){ // LONG INV, SHORT HEDGE
-
-            // Convert USDT notional -> PEPE quantity.
-            double ask_size = hedge_usdt / signal.mid;
-
-            // exchange LOT_SIZE normalization
-            ask_size = config.normalize_qty(ask_size, market);
-
-            // Re-check actual notional AFTER normalization.
-            if(ask_size < config.markets[market].base_size) ask_size = 0.0;
-            cout << "short: " << ask_size << "\n";
-            return {0.0, ask_size};
-        }
-        else{ // SHORT INV, LONG HEDGE
-
-            // Convert USDT notional -> PEPE quantity.
-            double bid_size = hedge_usdt / signal.mid;
-
-            // exchange LOT_SIZE normalization
-            bid_size = config.normalize_qty(bid_size, market);
-
-            // Re-check actual notional AFTER normalization.
-            if(bid_size < config.markets[market].base_size) bid_size = 0.0;
-
-            // cout << "bid_size: " << bid_size << "\n";
-            // cout << "ask_size: " << ask_size << "\n";
-            cout << "long: " << bid_size << "\n";
-            return {bid_size, 0.0};
-        }
-        return {0.0, 0.0};
-    }
-
     void place_hedge_quotes(const Signal& signal) override {
 
         double desired_bid = signal.my_bid;
         double desired_ask = signal.my_ask;
 
-        auto [bid_size, ask_size] = compute_order_size_hedge(signal);
+        double bid_size = signal.my_bid_size;
+        double ask_size = signal.my_ask_size;
+
         double tick = config.markets[market].tick_size;
 
         Order* bid_order = get_open_order("BUY");

@@ -254,7 +254,7 @@ public:
 
         market_thread = thread(&PolymarketFeed::market_loop, this);
 
-        cout << "LIVE SPOT SOCKETS STARTED\n";
+        cout << "LIVE POLYMARKET SOCKETS STARTED\n";
 
         // // wait for first message
         // {
@@ -324,7 +324,7 @@ public:
     }
 
     void stop() override {
-        cout << "STOPPING BINANCE FEED\n";
+        cout << "STOPPING POLYMARKET FEED\n";
 
         running = false;
 
@@ -335,7 +335,7 @@ public:
         if(market_thread.joinable()) market_thread.join();
         // if(depth_thread.joinable()) depth_thread.join();
 
-        cout << "BINANCE FEED STOPPED\n";
+        cout << "POLYMARKET FEED STOPPED\n";
     }
 };
 
@@ -579,7 +579,7 @@ public:
             state.update_vol();
         }
 
-        cout << "BOOK SYNCHRONIZED\n";
+        cout << "SPOT BOOK SYNCHRONIZED\n";
         
         // -------------------------
         // LIVE MODE
@@ -590,11 +590,11 @@ public:
         }
         state.initialized = true;
 
-        cout << "LIVE BOOK RUNNING\n";
+        cout << "LIVE SPOT BOOK RUNNING\n";
     }
 
     void stop() override {
-        cout << "STOPPING BINANCE FEED\n";
+        cout << "STOPPING SPOT BINANCE FEED\n";
 
         running = false;
 
@@ -616,6 +616,7 @@ public:
     ExecutionEventQueue& execution_event;
     DatasetRecorder& recorder;
     BinanceClock& clock;
+    std_string market;
 
     unique_ptr<ws_stream> trade_ws;
     unique_ptr<ws_stream> depth_ws;
@@ -633,8 +634,8 @@ public:
     thread trade_thread;
 
     BinancePerpsFeed(MarketConfig& config, State& state, ExecutionEventQueue& execution_event,
-                       DatasetRecorder& recorder, BinanceClock& clock):
-        config(config), state(state), execution_event(execution_event), recorder(recorder), clock(clock) {}
+                       DatasetRecorder& recorder, BinanceClock& clock, std_string market):
+        config(config), state(state), execution_event(execution_event), recorder(recorder), clock(clock), market(market) {}
 
     void parse_book(simdjson::ondemand::object obj, Depth& entry){
 
@@ -644,7 +645,7 @@ public:
             double p = double(arr.at(0).get_double_in_string());
             double q = double(arr.at(1).get_double_in_string());
 
-            entry.bid_delta.emplace_back(config.to_tick(p, config.market), q);
+            entry.bid_delta.emplace_back(config.to_tick(p, market), q);
         }
 
         for(auto a: obj["a"]){
@@ -653,7 +654,7 @@ public:
             double p = double(arr.at(0).get_double_in_string());
             double q = double(arr.at(1).get_double_in_string());
 
-            entry.ask_delta.emplace_back(config.to_tick(p, config.market), q);
+            entry.ask_delta.emplace_back(config.to_tick(p, market), q);
         }
     }
 
@@ -663,7 +664,7 @@ public:
         ctx.set_default_verify_paths();
 
         tcp::resolver resolver(ioc);
-        auto results = resolver.resolve(config.markets[config.market].hostname, "443");
+        auto results = resolver.resolve(config.markets[market].hostname, "443");
 
         // -------------------------
         // STEP 1: TCP SOCKET
@@ -675,14 +676,14 @@ public:
         // STEP 2: TLS LAYER
         // -------------------------
         ssl_stream ssl_sock(move(socket), ctx);
-        SSL_set_tlsext_host_name(ssl_sock.native_handle(), config.markets[config.market].hostname.c_str());
+        SSL_set_tlsext_host_name(ssl_sock.native_handle(), config.markets[market].hostname.c_str());
         ssl_sock.handshake(ssl::stream_base::client);
 
         // -------------------------
         // STEP 3: WEBSOCKET LAYER
         // -------------------------
         trade_ws = make_unique<ws_stream>(move(ssl_sock));
-        trade_ws->handshake(config.markets[config.market].hostname, "/ws/" + config.markets[config.market].instrument + "@trade");
+        trade_ws->handshake(config.markets[config.market].hostname, "/ws/" + config.markets[market].instrument + "@trade");
 
         beast::flat_buffer buffer;
         simdjson::ondemand::parser parser;
@@ -721,7 +722,7 @@ public:
         ctx.set_default_verify_paths();
 
         tcp::resolver resolver(ioc);
-        auto results = resolver.resolve(config.markets[config.market].hostname, "443");
+        auto results = resolver.resolve(config.markets[market].hostname, "443");
 
         // -------------------------
         // STEP 1: TCP SOCKET
@@ -733,14 +734,14 @@ public:
         // STEP 2: TLS LAYER
         // -------------------------
         ssl_stream ssl_sock(move(socket), ctx);
-        SSL_set_tlsext_host_name(ssl_sock.native_handle(), config.markets[config.market].hostname.c_str());
+        SSL_set_tlsext_host_name(ssl_sock.native_handle(), config.markets[market].hostname.c_str());
         ssl_sock.handshake(ssl::stream_base::client);
 
         // -------------------------
         // STEP 3: WEBSOCKET LAYER
         // -------------------------
         depth_ws = make_unique<ws_stream>(move(ssl_sock));
-        depth_ws->handshake(config.markets[config.market].hostname, "/ws/" + config.markets[config.market].instrument + "@depth@100ms");
+        depth_ws->handshake(config.markets[config.market].hostname, "/ws/" + config.markets[market].instrument + "@depth@100ms");
 
         beast::flat_buffer buffer;
         simdjson::ondemand::parser parser;
@@ -849,7 +850,7 @@ public:
             state.update_vol();
         }
 
-        cout << "BOOK SYNCHRONIZED\n";
+        cout << "PERPS BOOK SYNCHRONIZED\n";
         
         // -------------------------
         // LIVE MODE
@@ -860,14 +861,14 @@ public:
         }
         state.initialized = true;
 
-        cout << "LIVE BOOK RUNNING\n";
+        cout << "LIVE PERPS BOOK RUNNING\n";
     }
 
     // =========================
     // STOP
     // =========================
     void stop() override {
-        cout << "STOPPING BINANCE FEED\n";
+        cout << "STOPPING PERPS BINANCE FEED\n";
 
         running = false;
 
@@ -878,7 +879,7 @@ public:
         if(trade_thread.joinable()) trade_thread.join();
         if(depth_thread.joinable()) depth_thread.join();
 
-        cout << "BINANCE FEED STOPPED\n";
+        cout << "BINANCE PERPS FEED STOPPED\n";
     }
 };
 
@@ -1042,7 +1043,7 @@ public:
                 state.market_book.last_update_id = depth.u;
                 state.update_vol();
 
-                cout << "BOOK SYNCHRONIZED\n";
+                cout << "SPOT BOOK SYNCHRONIZED\n";
             }
             return;
         }
@@ -1095,16 +1096,16 @@ public:
 
         state.initialized = true;
 
-        cout << "LIVE BOOK RUNNING\n";
+        cout << "LIVE SPOT BOOK RUNNING\n";
     }
 
     void stop() override {
-        cout << "STOPPING REPLAY\n";
+        cout << "STOPPING SPOT REPLAY\n";
         running = false;
 
         if(replay_thread.joinable()) replay_thread.join();
 
-        cout << "REPLAY STOPPED\n";
+        cout << "SPOT REPLAY STOPPED\n";
     }
 };
 
@@ -1115,6 +1116,7 @@ public:
     ExecutionEventQueue& execution_event;
     DatasetRecorder& recorder;
     BinanceClock& clock;
+    std_string market;
 
     vector<EventRow> events;
     json orderbook_snapshot;
@@ -1134,8 +1136,8 @@ public:
     simdjson::ondemand::parser parser;
     
     BinancePerpsReplayFeed(MarketConfig& config, State& state, ExecutionEventQueue& execution_event,
-                            DatasetRecorder& recorder, BinanceClock& clock):
-        config(config), state(state), execution_event(execution_event), recorder(recorder), clock(clock) {initialize();}
+                            DatasetRecorder& recorder, BinanceClock& clock, std_string market):
+        config(config), state(state), execution_event(execution_event), recorder(recorder), clock(clock), market(market) {initialize();}
 
     void initialize(){
         std_string orderbook_snapshot_path = config.folder_path + "/orderbook_snapshot.json";
@@ -1207,7 +1209,7 @@ public:
             double p = double(arr.at(0).get_double_in_string());
             double q = double(arr.at(1).get_double_in_string());
 
-            entry.bid_delta.emplace_back(config.to_tick(p, config.market), q);
+            entry.bid_delta.emplace_back(config.to_tick(p, market), q);
         }
 
         for(auto a: obj["a"]){
@@ -1216,7 +1218,7 @@ public:
             double p = double(arr.at(0).get_double_in_string());
             double q = double(arr.at(1).get_double_in_string());
 
-            entry.ask_delta.emplace_back(config.to_tick(p, config.market), q);
+            entry.ask_delta.emplace_back(config.to_tick(p, market), q);
         }
     }
 
@@ -1269,7 +1271,7 @@ public:
                 state.market_book.last_update_id = depth.u;
                 state.update_vol();
 
-                cout << "BOOK SYNCHRONIZED\n";
+                cout << "PERPS BOOK SYNCHRONIZED\n";
             }
             return;
         }
@@ -1321,16 +1323,16 @@ public:
 
         state.initialized = true;
 
-        cout << "LIVE BOOK RUNNING\n";
+        cout << "LIVE PERPS BOOK RUNNING\n";
     }
 
     void stop() override {
-        cout << "STOPPING REPLAY\n";
+        cout << "STOPPING PERPS REPLAY\n";
         running = false;
 
         if(replay_thread.joinable()) replay_thread.join();
 
-        cout << "REPLAY STOPPED\n";
+        cout << "PERPS REPLAY STOPPED\n";
     }
 };
 
