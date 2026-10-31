@@ -913,8 +913,8 @@ public:
         config(config), state(state), execution_event(execution_event), recorder(recorder), clock(clock) {initialize();}
 
     void initialize(){
-        std_string orderbook_snapshot_path = config.folder_path + "/orderbook_snapshot.json";
-        std_string events_path = config.folder_path + "/events.parquet";
+        std_string orderbook_snapshot_path = config.folder_path + "/spot_orderbook_snapshot.json";
+        std_string events_path = config.folder_path + "/spot_events.parquet";
 
         cout << "snapshot path: " << orderbook_snapshot_path << "\n";
         ifstream f(orderbook_snapshot_path);
@@ -1140,8 +1140,8 @@ public:
         config(config), state(state), execution_event(execution_event), recorder(recorder), clock(clock), market(market) {initialize();}
 
     void initialize(){
-        std_string orderbook_snapshot_path = config.folder_path + "/orderbook_snapshot.json";
-        std_string events_path = config.folder_path + "/events.parquet";
+        std_string orderbook_snapshot_path = config.folder_path + "/" + market + "_orderbook_snapshot.json";
+        std_string events_path = config.folder_path + "/" + market + "_events.parquet";
 
         cout << "snapshot path: " << orderbook_snapshot_path << "\n";
         ifstream f(orderbook_snapshot_path);

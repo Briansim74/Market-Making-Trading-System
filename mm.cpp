@@ -70,6 +70,7 @@
 #include "mm_execution.hpp" //execution
 #include "mm_broker_stream.hpp" // broker & user stream
 #include "mm_clock.hpp" //clock
+#include "mm_markprice.hpp" // funding rate
 
 using std::cout;
 using json = nlohmann::json;
@@ -101,6 +102,15 @@ public:
     Execution& spot_execution;
     Execution& perps_execution;
 
+    // NEW
+    State& maker_state;
+    State& hedge_state;
+
+    Execution& maker_execution;
+    Execution& hedge_execution;
+
+
+
     BinanceClock& clock;
     ExecutionEventQueue& execution_event;
     EventNotifier& dashboard_event;
@@ -131,7 +141,16 @@ public:
     
     Engine(MarketConfig& config, State& spot_state, State& perps_state, MarketMakingStrategy& strategy, Execution& spot_execution, Execution& perps_execution, BinanceClock& clock,
         ExecutionEventQueue& execution_event, EventNotifier& dashboard_event, SnapshotStore& snapshot_store, DatasetRecorder& spot_recorder, DatasetRecorder& perps_recorder)
-        : config(config), spot_state(spot_state), perps_state(perps_state), strategy(strategy), spot_execution(spot_execution), perps_execution(perps_execution), clock(clock),
+        : config(config), spot_state(spot_state), perps_state(perps_state), strategy(strategy), spot_execution(spot_execution), perps_execution(perps_execution), 
+        
+        maker_state(config.market == "spot" ? spot_state : perps_state),
+        hedge_state(config.market == "spot" ? perps_state : spot_state),
+
+        maker_execution(config.market == "spot" ? spot_execution : perps_execution),
+        hedge_execution(config.market == "spot" ? perps_execution : spot_execution),
+        
+        
+        clock(clock),
         execution_event(execution_event), dashboard_event(dashboard_event), snapshot_store(snapshot_store), spot_recorder(spot_recorder), perps_recorder(perps_recorder)
         {
             initialize();
@@ -141,11 +160,11 @@ public:
     void initialize(){
         if(config.market == "spot"){
             spot_execution_enabled = true;
-            if(config.target_hedge_ratio > 0.0) perps_execution_enabled = true;
+            if(config.hedge_enabled) perps_execution_enabled = true;
         }
         else if(config.market != "spot"){
             perps_execution_enabled = true;
-            if(config.target_hedge_ratio > 0.0) spot_execution_enabled = true;
+            if(config.hedge_enabled) spot_execution_enabled = true;
         }
     }
 
@@ -181,6 +200,10 @@ public:
 
             case ExecutionEventType::HYPERLIQUID_DEPTH_UPDATE:
                 on_depth_event_hyperliquid(ev.depth);
+                break;
+
+            case ExecutionEventType::MARKPRICE_UPDATE:
+                on_markprice_event_perps(ev.stream);
                 break;
         }
 
@@ -469,14 +492,30 @@ public:
         
         if(!trading_enabled) return;
 
-        if(perps_execution_enabled){
-            cout << "perps hedge1\n";
-            Signal hedge_signal = strategy.calculate_hedge(spot_state, perps_state);
-            perps_execution.place_hedge_quotes(hedge_signal);
-            cout << "perps hedge1\n";
+        if(config.market == "spot"){
+            // spot is maker, standard spot execution
+            spot_execution.place_quotes(*spot_state.last_signal);
+
+            // hedge is perps and enabled
+            if(config.hedge_enabled){
+                cout << "perps hedge\n";
+                Signal hedge_signal = strategy.calculate_hedge(spot_state, perps_state);
+                // perps_recorder.log_snapshot(hedge_signal);
+                perps_state.last_hedge_signal = hedge_signal;
+
+                perps_execution.place_hedge_quotes(hedge_signal);
+            }
         }
+
+        // perps is maker, spot hedge reacts to any changes in hedge state
+        else{
+            cout << "perps maker, react to spot stream hedge\n";
+            Signal hedge_signal = strategy.calculate_hedge(perps_state, spot_state);
+            // spot_recorder.log_snapshot(hedge_signal);
+            spot_state.last_hedge_signal = hedge_signal;
         
-        else spot_execution.place_quotes(*spot_state.last_signal);
+            spot_execution.place_hedge_quotes(hedge_signal);
+        }
     }
 
     void on_stream_event_perps(const Stream& stream){
@@ -488,14 +527,36 @@ public:
         
         if(!trading_enabled) return;
 
-        if(spot_execution_enabled){
-            cout << "spot hedge1\n";
-            Signal hedge_signal = strategy.calculate_hedge(perps_state, spot_state);
-            spot_execution.place_hedge_quotes(hedge_signal);
-            cout << "spot hedge1\n";
+        if(config.market != "spot"){
+            // perps is maker, standard perps execution
+            perps_execution.place_quotes(*perps_state.last_signal); // perps is maker
+
+            // hedge is spot and enabled
+            if(config.hedge_enabled){ // spot hedge reacts to all perps stream events
+                cout << "spot hedge\n";
+                Signal hedge_signal = strategy.calculate_hedge(perps_state, spot_state);
+                // spot_recorder.log_snapshot(hedge_signal);
+                spot_state.last_hedge_signal = hedge_signal;
+
+                spot_execution.place_hedge_quotes(hedge_signal);
+            }
         }
-        
-        else perps_execution.place_quotes(*perps_state.last_signal);
+
+        // spot is maker, perps hedge reacts to any changes in hedge state
+        else{
+            cout << "spot maker, react to perps stream hedge\n";
+            Signal hedge_signal = strategy.calculate_hedge(spot_state, perps_state);
+            // perps_recorder.log_snapshot(hedge_signal);
+            perps_state.last_hedge_signal = hedge_signal;
+            
+            perps_execution.place_hedge_quotes(hedge_signal);
+        }
+    }
+
+    void on_markprice_event_perps(const Stream& stream){
+
+        perps_state.funding_rate = stream.funding_rate;
+        perps_state.next_funding_ts = stream.next_funding_ts;
     }
 
     void on_depth_event_hyperliquid(const Depth& depth){
@@ -569,18 +630,6 @@ public:
         cout << "CANCELLING OPEN ORDERS1\n";
     }
 
-    // void wait_for_cancel(){
-    //     if(waiting_for_cancel && (!spot_execution.get_open_order("BUY") && !spot_execution.get_open_order("SELL"))){ // to be changed to spot + perps
-            
-    //         cout << "NO MORE OPEN ORDERS, PLACING MARKET\n";
-    //         waiting_for_cancel = false;
-    //         waiting_for_flatten = true;
-
-    //         spot_execution.place_market();
-    //         cout << "wait_for_cancel done\n";
-    //     }
-    // }
-
     void wait_for_cancel(){
         if(waiting_for_cancel){
             if(spot_execution_enabled && perps_execution_enabled && !spot_execution.get_open_order("BUY") && !spot_execution.get_open_order("SELL")
@@ -616,32 +665,6 @@ public:
             }
         }
     }
-
-    // void wait_for_flatten(){
-    //     // if(waiting_for_flatten && abs(state.inventory) <= 1e-9){
-    //     // Already within [-10, +10] USDT
-    //     if(waiting_for_flatten && abs(spot_state.inventory * spot_state.market_book.mid()) <= config.target_notional){ // to be changed to spot + perps
- 
-    //         cout << "abs(state.inventory * state.market_book.mid(): " << abs(spot_state.inventory * spot_state.market_book.mid()) << "\n";
-    //         waiting_for_flatten = false;
-
-    //         Snapshot snap = build_snapshot();
-    //         snapshot_store.set(move(snap));
-
-    //         {
-    //             lock_guard<mutex> lock(dashboard_event.signal_mtx);
-    //             dashboard_event.signal_pending = true;
-    //         }
-
-    //         dashboard_event.signal_cv.notify_one();
-            
-    //         {
-    //             lock_guard<mutex> lock(shutdown_mtx);
-    //             shutdown_complete = true;
-    //         }
-    //         shutdown_cv.notify_one();
-    //     }
-    // }
 
     void wait_for_flatten(){
 
@@ -747,13 +770,8 @@ public:
 
     Snapshot build_snapshot(){
         Snapshot snap;
-
-        State& maker_state = (config.market == "spot") ? spot_state : perps_state;
-        State& hedge_state = (config.market == "spot") ? perps_state : spot_state;
-
-        Execution& maker_execution = (config.market == "spot") ? spot_execution : perps_execution;
-        Execution& hedge_execution = (config.market == "spot") ? perps_execution : spot_execution;
         
+        // MAKER
         auto& book = maker_state.market_book;
  
         auto [bid_tick, bid_size] = book.best_bid();
@@ -773,63 +791,153 @@ public:
         snap.title.regime = maker_state.last_signal ? maker_state.last_signal->regime : "";
         snap.title.pnl_pct = maker_state.get_pnl(mid) / config.markets[config.market].initial_cash * 100;
 
-        snap.market.mid = mid;
-        snap.market.microprice = microprice;
-        snap.market.spread = spread;
-        snap.market.best_bid = best_bid;
-        snap.market.best_ask = best_ask;
-        snap.market.bid_size = bid_size;
-        snap.market.ask_size = ask_size;
-        snap.market.ewma_vol = maker_state.get_vol();
-        snap.market.order_imbalance = maker_state.order_imbalance;
-        snap.market.trade_imbalance = maker_state.trade_imbalance;
-        snap.market.trade = tradeToString(maker_state.last_trade);
+        snap.maker.market.instrument = config.markets[config.market].instrument;
 
-        snap.regime.regime = maker_state.last_signal ? maker_state.last_signal->regime : "";
-        snap.regime.confidence = maker_state.last_signal ? maker_state.last_signal->regime_prob : 0.0;
+        snap.maker.market.mid = mid;
+        snap.maker.market.microprice = microprice;
+        snap.maker.market.spread = spread;
+        snap.maker.market.best_bid = best_bid;
+        snap.maker.market.best_ask = best_ask;
+        snap.maker.market.bid_size = bid_size;
+        snap.maker.market.ask_size = ask_size;
+        snap.maker.market.ewma_vol = maker_state.get_vol();
+        snap.maker.market.order_imbalance = maker_state.order_imbalance;
+        snap.maker.market.trade_imbalance = maker_state.trade_imbalance;
+        snap.maker.market.trade = tradeToString(maker_state.last_trade);
 
-        snap.signals.fair = maker_state.last_signal ? maker_state.last_signal->fair : 0.0;
-        snap.signals.skew = maker_state.last_signal ? maker_state.last_signal->skew : 0.0;
-        snap.signals.reservation = maker_state.last_signal ? maker_state.last_signal->reservation : 0.0;
-        snap.signals.alpha_trade_imb = maker_state.last_signal ? maker_state.last_signal->alpha_trade_imb : 0.0;
-        snap.signals.alpha_struct = maker_state.last_signal ? maker_state.last_signal->alpha_struct : 0.0;
-        snap.signals.alpha_residual = maker_state.last_signal ? maker_state.last_signal->alpha_residual : 0.0;
-        snap.signals.spread_multiplier = maker_state.last_signal ? maker_state.last_signal->spread_multiplier : 0.0;
-        snap.signals.inventory_target = maker_state.last_signal ? maker_state.last_signal->inventory_target : 0.0;
-        snap.signals.tox = maker_state.last_signal ? maker_state.last_signal->toxicity.tox : 0.0;
-        snap.signals.k_spread = maker_state.last_signal ? maker_state.last_signal->toxicity.k_spread : 0.0;
-        snap.signals.k_order_size = maker_state.last_signal ? maker_state.last_signal->toxicity.k_order_size : 0.0;
-        snap.signals.residual_signal_quality = maker_state.last_signal ? maker_state.last_signal->residual_signal_quality : 0.0;
-        snap.signals.toxicity_signal_quality = maker_state.last_signal ? maker_state.last_signal->toxicity_signal_quality : 0.0;
+        snap.maker.regime.regime = maker_state.last_signal ? maker_state.last_signal->regime : "";
+        snap.maker.regime.confidence = maker_state.last_signal ? maker_state.last_signal->regime_prob : 0.0;
+
+        snap.maker.signals.fair = maker_state.last_signal ? maker_state.last_signal->fair : 0.0;
+        snap.maker.signals.skew = maker_state.last_signal ? maker_state.last_signal->skew : 0.0;
+        snap.maker.signals.reservation = maker_state.last_signal ? maker_state.last_signal->reservation : 0.0;
+        snap.maker.signals.alpha_trade_imb = maker_state.last_signal ? maker_state.last_signal->alpha_trade_imb : 0.0;
+        snap.maker.signals.alpha_struct = maker_state.last_signal ? maker_state.last_signal->alpha_struct : 0.0;
+        snap.maker.signals.alpha_residual = maker_state.last_signal ? maker_state.last_signal->alpha_residual : 0.0;
+        snap.maker.signals.spread_multiplier = maker_state.last_signal ? maker_state.last_signal->spread_multiplier : 0.0;
+        snap.maker.signals.inventory_target = maker_state.last_signal ? maker_state.last_signal->inventory_target : 0.0;
+        snap.maker.signals.tox = maker_state.last_signal ? maker_state.last_signal->toxicity.tox : 0.0;
+        snap.maker.signals.k_spread = maker_state.last_signal ? maker_state.last_signal->toxicity.k_spread : 0.0;
+        snap.maker.signals.k_order_size = maker_state.last_signal ? maker_state.last_signal->toxicity.k_order_size : 0.0;
+        snap.maker.signals.residual_signal_quality = maker_state.last_signal ? maker_state.last_signal->residual_signal_quality : 0.0;
+        snap.maker.signals.toxicity_signal_quality = maker_state.last_signal ? maker_state.last_signal->toxicity_signal_quality : 0.0;
         
-        snap.quotes.my_spread = maker_state.last_signal ? maker_state.last_signal->my_spread : 0.0;
-        snap.quotes.my_bid = maker_execution.get_last_bid();
-        snap.quotes.my_ask = maker_execution.get_last_ask();
-        snap.quotes.current_bid_size = maker_execution.get_current_bid_size();
-        snap.quotes.current_ask_size = maker_execution.get_current_ask_size();
+        snap.maker.quotes.my_spread = maker_state.last_signal ? maker_state.last_signal->my_spread : 0.0;
+        snap.maker.quotes.my_bid = maker_execution.get_last_bid();
+        snap.maker.quotes.my_ask = maker_execution.get_last_ask();
+        snap.maker.quotes.current_bid_size = maker_execution.get_current_bid_size();
+        snap.maker.quotes.current_ask_size = maker_execution.get_current_ask_size();
 
-        snap.execution.bid_queue = bid_queue;
-        snap.execution.ask_queue = ask_queue;
-        snap.execution.bid_pressure = bid_queue / (bid_size + 1e-9);
-        snap.execution.ask_pressure = ask_queue / (ask_size + 1e-9);
+        snap.maker.execution.bid_queue = bid_queue;
+        snap.maker.execution.ask_queue = ask_queue;
+        snap.maker.execution.bid_pressure = bid_queue / (bid_size + 1e-9);
+        snap.maker.execution.ask_pressure = ask_queue / (ask_size + 1e-9);
 
-        snap.execution.buy_order = orderPointerToString(maker_execution.get_open_order("BUY"));
-        snap.execution.sell_order = orderPointerToString(maker_execution.get_open_order("SELL"));
-        snap.execution.last_fill_candidate = orderOptionalToString(maker_state.last_fill_candidate);
-        snap.execution.last_order_update = orderOptionalToString(maker_state.last_order_update);
+        snap.maker.execution.buy_order = orderPointerToString(maker_execution.get_open_order("BUY"));
+        snap.maker.execution.sell_order = orderPointerToString(maker_execution.get_open_order("SELL"));
+        snap.maker.execution.last_fill_candidate = orderOptionalToString(maker_state.last_fill_candidate);
+        snap.maker.execution.last_order_update = orderOptionalToString(maker_state.last_order_update);
         
-        snap.risk.inventory = maker_state.inventory * mid; // USDT normalized
-        snap.risk.realized_pnl = maker_state.realized_pnl;
-        snap.risk.unrealized_pnl = maker_state.get_unrealized_pnl(mid);
-        snap.risk.fees_paid = maker_state.fees_paid;
-        snap.risk.total_pnl = maker_state.get_pnl(mid);
+        snap.maker.risk.inventory = maker_state.inventory * mid; // USDT normalized
+        snap.maker.risk.realized_pnl = maker_state.realized_pnl;
+        snap.maker.risk.unrealized_pnl = maker_state.get_unrealized_pnl(mid);
+        snap.maker.risk.fees_paid = maker_state.fees_paid;
+        snap.maker.risk.total_pnl = maker_state.get_pnl(mid);
 
-        snap.system.time = config.format_ms_precise(maker_state.time);
-        snap.system.last_trade_ts = config.format_ms_precise(maker_state.last_trade_ts);
-        snap.system.last_depth_ts = config.format_ms_precise(maker_state.last_depth_ts);
-        snap.system.trade_latency = maker_state.trade_latency;
-        snap.system.depth_latency = maker_state.depth_latency;
-        snap.system.exchange_latency = maker_state.exchange_latency;
+        snap.maker.system.last_trade_ts = config.format_ms_precise(maker_state.last_trade_ts);
+        snap.maker.system.last_depth_ts = config.format_ms_precise(maker_state.last_depth_ts);
+        snap.maker.system.trade_latency = maker_state.trade_latency;
+        snap.maker.system.depth_latency = maker_state.depth_latency;
+        snap.maker.system.exchange_latency = maker_state.exchange_latency;
+
+        // HEDGE
+
+        auto& hedge_book = hedge_state.market_book;
+ 
+        auto [hedge_bid_tick, hedge_bid_size] = hedge_book.best_bid();
+        auto [hedge_ask_tick, hedge_ask_size] = hedge_book.best_ask();
+
+        double hedge_best_bid = config.from_tick(hedge_bid_tick, config.hedge);
+        double hedge_best_ask = config.from_tick(hedge_ask_tick, config.hedge);
+
+        double hedge_mid = (hedge_best_bid + hedge_best_ask) / 2.0;
+        double hedge_spread = hedge_best_ask - hedge_best_bid;
+        double hedge_microprice = (hedge_best_ask * hedge_bid_size + hedge_best_bid * hedge_ask_size) /(hedge_bid_size + hedge_ask_size + 1e-9);
+
+        double hedge_bid_queue = (hedge_state.bid_queue_ahead.first == hedge_bid_tick) ? hedge_state.bid_queue_ahead.second : 0.0;
+        double hedge_ask_queue = (hedge_state.ask_queue_ahead.first == hedge_ask_tick) ? hedge_state.ask_queue_ahead.second : 0.0;
+
+        snap.hedge.market.instrument = config.markets[config.hedge].instrument;
+
+        snap.hedge.market.mid = hedge_mid;
+        snap.hedge.market.microprice = hedge_microprice;
+        snap.hedge.market.spread = hedge_spread;
+        snap.hedge.market.best_bid = hedge_best_bid;
+        snap.hedge.market.best_ask = hedge_best_ask;
+        snap.hedge.market.bid_size = hedge_bid_size;
+        snap.hedge.market.ask_size = hedge_ask_size;
+        snap.hedge.market.ewma_vol = hedge_state.get_vol();
+        snap.hedge.market.order_imbalance = hedge_state.order_imbalance;
+        snap.hedge.market.trade_imbalance = hedge_state.trade_imbalance;
+        snap.hedge.market.trade = tradeToString(hedge_state.last_trade);
+
+        snap.hedge.regime.regime = hedge_state.last_signal ? hedge_state.last_signal->regime : "";
+        snap.hedge.regime.confidence = hedge_state.last_signal ? hedge_state.last_signal->regime_prob : 0.0;
+
+        snap.hedge.signals.fair = hedge_state.last_signal ? hedge_state.last_signal->fair : 0.0;
+        snap.hedge.signals.skew = hedge_state.last_signal ? hedge_state.last_signal->skew : 0.0;
+        snap.hedge.signals.reservation = hedge_state.last_signal ? hedge_state.last_signal->reservation : 0.0;
+        snap.hedge.signals.alpha_trade_imb = hedge_state.last_signal ? hedge_state.last_signal->alpha_trade_imb : 0.0;
+        snap.hedge.signals.alpha_struct = hedge_state.last_signal ? hedge_state.last_signal->alpha_struct : 0.0;
+        snap.hedge.signals.alpha_residual = hedge_state.last_signal ? hedge_state.last_signal->alpha_residual : 0.0;
+        snap.hedge.signals.spread_multiplier = hedge_state.last_signal ? hedge_state.last_signal->spread_multiplier : 0.0;
+        snap.hedge.signals.inventory_target = hedge_state.last_signal ? hedge_state.last_signal->inventory_target : 0.0;
+        snap.hedge.signals.tox = hedge_state.last_signal ? hedge_state.last_signal->toxicity.tox : 0.0;
+        snap.hedge.signals.k_spread = hedge_state.last_signal ? hedge_state.last_signal->toxicity.k_spread : 0.0;
+        snap.hedge.signals.k_order_size = hedge_state.last_signal ? hedge_state.last_signal->toxicity.k_order_size : 0.0;
+        snap.hedge.signals.residual_signal_quality = hedge_state.last_signal ? hedge_state.last_signal->residual_signal_quality : 0.0;
+        snap.hedge.signals.toxicity_signal_quality = hedge_state.last_signal ? hedge_state.last_signal->toxicity_signal_quality : 0.0;
+        
+        snap.hedge.quotes.my_spread = hedge_state.last_signal ? hedge_state.last_signal->my_spread : 0.0;
+        snap.hedge.quotes.my_bid = hedge_execution.get_last_bid();
+        snap.hedge.quotes.my_ask = hedge_execution.get_last_ask();
+        snap.hedge.quotes.current_bid_size = hedge_execution.get_current_bid_size();
+        snap.hedge.quotes.current_ask_size = hedge_execution.get_current_ask_size();
+
+        snap.hedge.execution.bid_queue = hedge_bid_queue;
+        snap.hedge.execution.ask_queue = hedge_ask_queue;
+        snap.hedge.execution.bid_pressure = hedge_bid_queue / (hedge_bid_size + 1e-9);
+        snap.hedge.execution.ask_pressure = hedge_ask_queue / (hedge_ask_size + 1e-9);
+
+        snap.hedge.execution.buy_order = orderPointerToString(hedge_execution.get_open_order("BUY"));
+        snap.hedge.execution.sell_order = orderPointerToString(hedge_execution.get_open_order("SELL"));
+        snap.hedge.execution.last_fill_candidate = orderOptionalToString(hedge_state.last_fill_candidate);
+        snap.hedge.execution.last_order_update = orderOptionalToString(hedge_state.last_order_update);
+        
+        snap.hedge.risk.inventory = hedge_state.inventory * hedge_mid; // USDT normalized
+        snap.hedge.risk.realized_pnl = hedge_state.realized_pnl;
+        snap.hedge.risk.unrealized_pnl = hedge_state.get_unrealized_pnl(hedge_mid);
+        snap.hedge.risk.fees_paid = hedge_state.fees_paid;
+        snap.hedge.risk.total_pnl = hedge_state.get_pnl(hedge_mid);
+
+        snap.hedge.system.time = config.format_ms_precise(hedge_state.time);
+        snap.hedge.system.last_trade_ts = config.format_ms_precise(hedge_state.last_trade_ts);
+        snap.hedge.system.last_depth_ts = config.format_ms_precise(hedge_state.last_depth_ts);
+        snap.hedge.system.trade_latency = hedge_state.trade_latency;
+        snap.hedge.system.depth_latency = hedge_state.depth_latency;
+        snap.hedge.system.exchange_latency = hedge_state.exchange_latency;
+
+
+
+        snap.hedge.signals1.maker_delta = maker_state.inventory * mid;
+        snap.hedge.signals1.hedge_delta = hedge_state.inventory * hedge_mid;
+        snap.hedge.signals1.net_delta = snap.hedge.signals1.maker_delta + snap.hedge.signals1.hedge_delta;
+        snap.hedge.signals1.target_hedge_ratio = config.target_hedge_ratio;
+        snap.hedge.signals1.target_hedge = hedge_state.last_hedge_signal ? hedge_state.last_hedge_signal->target_hedge : 0.0;
+        snap.hedge.signals1.hedge_decision = hedge_state.last_hedge_signal ? hedge_state.last_hedge_signal->hedge_decision : "—";
+        snap.hedge.market.basis = hedge_mid - 1000.0 * mid;
+        snap.hedge.market.funding_rate = hedge_state.funding_rate;
+        snap.hedge.market.next_funding_ts = config.format_ms_precise(hedge_state.next_funding_ts);
 
         return snap;
     }
@@ -883,6 +991,8 @@ public:
 
     unique_ptr<BinanceUserStream> spot_user_stream;
     unique_ptr<BinanceUserStream> perps_user_stream;
+    
+    unique_ptr<BinanceMarkPriceStream> perps_markprice_stream;
 
     unique_ptr<Engine> engine;
     unique_ptr<Feed> spot_feed;
@@ -911,10 +1021,12 @@ public:
             spot_execution = make_unique<LiveExecution>(config, spot_state, spot_recorder, *spot_broker, clock, "spot");
             spot_user_stream = make_unique<BinanceSpotUserStream>(config, *spot_broker, execution_event, clock);
 
-            if(config.target_hedge_ratio > 0.0){
+            if(config.hedge_enabled){
                 perps_broker = make_unique<BinancePerpsBroker>(config, clock);
                 perps_execution = make_unique<LiveExecution>(config, perps_state, perps_recorder, *perps_broker, clock, "perps");
                 perps_user_stream = make_unique<BinancePerpsUserStream>(config, *perps_broker, execution_event, clock);
+                
+                perps_markprice_stream = make_unique<BinanceMarkPriceStream>(config, execution_event, clock);
             }
         }
 
@@ -922,6 +1034,12 @@ public:
             perps_broker = make_unique<BinancePerpsBroker>(config, clock);
             perps_execution = make_unique<LiveExecution>(config, perps_state, perps_recorder, *perps_broker, clock, "perps");
             perps_user_stream = make_unique<BinancePerpsUserStream>(config, *perps_broker, execution_event, clock);
+
+            if(config.hedge_enabled){
+                spot_broker = make_unique<BinanceSpotBroker>(config, clock);
+                spot_execution = make_unique<LiveExecution>(config, spot_state, spot_recorder, *spot_broker, clock, "spot");
+                spot_user_stream = make_unique<BinanceSpotUserStream>(config, *spot_broker, execution_event, clock);
+            }
         }
 
         else if((config.mode == "testnet" || config.mode == "live") && config.market == "testnet_perps"){
@@ -932,10 +1050,14 @@ public:
         
         else if(config.mode != "live" && config.market == "spot"){
             spot_execution = make_unique<PaperExecution>(config, spot_state, spot_recorder, clock, "spot");
+
+            if(config.hedge_enabled) perps_execution = make_unique<PaperExecution>(config, spot_state, spot_recorder, clock, "perps");
         }
 
-        else if(config.mode != "live" && config.market == "testnet_perps"){
-            perps_execution = make_unique<PaperExecution>(config, spot_state, spot_recorder, clock, "spot");
+        else if(config.mode != "live" && config.market == "perps"){
+            perps_execution = make_unique<PaperExecution>(config, spot_state, spot_recorder, clock, "perps");
+
+            if(config.hedge_enabled) spot_execution = make_unique<PaperExecution>(config, spot_state, spot_recorder, clock, "spot");
         }
 
         if(config.exchange == "binance" && config.market == "spot" && config.mode != "replay"){
@@ -996,6 +1118,8 @@ public:
 
         if(spot_user_stream) spot_user_stream->start();
         if(perps_user_stream) perps_user_stream->start();
+
+        if(perps_markprice_stream) perps_markprice_stream->start();
 
         start_dashboard_loop();
 
@@ -1127,6 +1251,8 @@ public:
 
         if(spot_user_stream) spot_user_stream->stop();
         if(perps_user_stream) perps_user_stream->stop();
+
+        if(perps_markprice_stream) perps_markprice_stream->stop();
 
         ioc.stop();
 

@@ -114,6 +114,9 @@ struct Stream {
     int64_t exchange_ts;
     int64_t local_ts;
     bool is_maker;
+
+    double funding_rate;
+    int64_t next_funding_ts;
 };
 
 struct Hawkes {
@@ -149,7 +152,7 @@ struct InstrumentConfig {
     std_string instrument_upper;
 
     double initial_position;
-    
+
     double base_spread;
     double base_size;
     double initial_cash;
@@ -186,7 +189,8 @@ enum class ExecutionEventType {
     SPOT_STREAM_UPDATE,
     PERPS_STREAM_UPDATE,
     CANCEL_UPDATE,
-    HYPERLIQUID_DEPTH_UPDATE
+    HYPERLIQUID_DEPTH_UPDATE,
+    MARKPRICE_UPDATE
 };
 
 struct ExecutionEvent {
@@ -287,6 +291,8 @@ struct Toxicity {
 };
 
 struct Signal {
+    double target_hedge;
+    std_string hedge_decision;
     double maker_inventory;
     double hedge_inventory;
     double maker_mid;
@@ -427,75 +433,173 @@ struct Snapshot {
     } title;
 
     struct {
-        double mid;
-        double microprice;
-        double spread;
-        double best_bid;
-        double best_ask;
-        double bid_size;
-        double ask_size;
-        double ewma_vol;
-        double order_imbalance;
-        double trade_imbalance;
-        std_string trade;
-    } market;
+        struct {
+            std_string instrument;
+            double mid;
+            double microprice;
+            double spread;
+            double best_bid;
+            double best_ask;
+            double bid_size;
+            double ask_size;
+            double ewma_vol;
+            double order_imbalance;
+            double trade_imbalance;
+            std_string trade;
+        } market;
+
+        struct {
+            std_string regime;
+            double confidence;
+        } regime;
+
+        struct {
+            double fair;
+            double skew;
+            double reservation;
+            double alpha_trade_imb;
+            double alpha_struct;
+            double alpha_residual;
+            double spread_multiplier;
+            double inventory_target;
+            double tox;
+            double k_spread;
+            double k_order_size;
+            double residual_signal_quality;
+            double toxicity_signal_quality;
+        } signals;
+
+        struct {
+            double my_spread;
+            double my_bid;
+            double my_ask;
+            double current_bid_size;
+            double current_ask_size;
+        } quotes;
+
+        struct {
+            double bid_queue;
+            double ask_queue;
+            double bid_pressure;
+            double ask_pressure;
+            std_string buy_order;
+            std_string sell_order;
+            std_string last_fill_candidate;
+            std_string last_order_update;
+        } execution;
+
+        struct {
+            double inventory;
+            double realized_pnl;
+            double unrealized_pnl;
+            double fees_paid;
+            double total_pnl;
+        } risk;
+
+        struct {
+            std_string time;
+            std_string last_trade_ts;
+            std_string last_depth_ts;
+            int64_t trade_latency;
+            int64_t depth_latency;
+            int64_t exchange_latency;
+        } system;
+    } maker;
 
     struct {
-        std_string regime;
-        double confidence;
-    } regime;
+        struct {
+            double maker_delta;
+            double hedge_delta;
+            double net_delta;
+            double target_hedge_ratio;
+            double target_hedge;
+            std_string hedge_decision;
 
-    struct {
-        double fair;
-        double skew;
-        double reservation;
-        double alpha_trade_imb;
-        double alpha_struct;
-        double alpha_residual;
-        double spread_multiplier;
-        double inventory_target;
-        double tox;
-        double k_spread;
-        double k_order_size;
-        double residual_signal_quality;
-        double toxicity_signal_quality;
-    } signals;
+            // double hedge_status;
+            // double inventory_target;
+            // double tox;
+            // double k_spread;
+            // double k_order_size;
+            // double residual_signal_quality;
+            // double toxicity_signal_quality;
+        } signals1;
 
-    struct {
-        double my_spread;
-        double my_bid;
-        double my_ask;
-        double current_bid_size;
-        double current_ask_size;
-    } quotes;
+        struct {
+            std_string instrument;
+            double mid;
+            double microprice;
+            double spread;
+            double best_bid;
+            double best_ask;
+            double bid_size;
+            double ask_size;
+            double ewma_vol;
+            double order_imbalance;
+            double trade_imbalance;
+            std_string trade;
 
-    struct {
-        double bid_queue;
-        double ask_queue;
-        double bid_pressure;
-        double ask_pressure;
-        std_string buy_order;
-        std_string sell_order;
-        std_string last_fill_candidate;
-        std_string last_order_update;
-    } execution;
+            double basis;
+            double funding_rate;
+            std_string next_funding_ts;
+        } market;
 
-    struct {
-        double inventory;
-        double realized_pnl;
-        double unrealized_pnl;
-        double fees_paid;
-        double total_pnl;
-    } risk;
+        struct {
+            std_string regime;
+            double confidence;
+        } regime;
 
-    struct {
-        std_string time;
-        std_string last_trade_ts;
-        std_string last_depth_ts;
-        int64_t trade_latency;
-        int64_t depth_latency;
-        int64_t exchange_latency;
-    } system;
+        struct {
+            double fair;
+            double skew;
+            double reservation;
+            double alpha_trade_imb;
+            double alpha_struct;
+            double alpha_residual;
+            double spread_multiplier;
+            double inventory_target;
+            double tox;
+            double k_spread;
+            double k_order_size;
+            double residual_signal_quality;
+            double toxicity_signal_quality;
+        } signals;
+
+        struct {
+            double my_spread;
+            double my_bid;
+            double my_ask;
+            double current_bid_size;
+            double current_ask_size;
+        } quotes;
+
+        struct {
+            double bid_queue;
+            double ask_queue;
+            double bid_pressure;
+            double ask_pressure;
+            std_string buy_order;
+            std_string sell_order;
+            std_string last_fill_candidate;
+            std_string last_order_update;
+        } execution;
+
+        struct {
+            double inventory;
+            double realized_pnl;
+            double unrealized_pnl;
+            double fees_paid;
+            double total_pnl;
+        } risk;
+
+        struct {
+            std_string time;
+            std_string last_trade_ts;
+            std_string last_depth_ts;
+            int64_t trade_latency;
+            int64_t depth_latency;
+            int64_t exchange_latency;
+        } system;
+    } hedge;
 };
 
 struct SnapshotRow {

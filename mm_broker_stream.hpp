@@ -177,9 +177,9 @@ public:
                 cout << "[HTTP] - ERROR: status >= 400: HTTP " + to_string(res.result_int()) + ": " + res.body();
             }
             
-            cout << "\n===== HTTP RESPONSE =====\n";
+            cout << "\n\n===== HTTP RESPONSE =====\n";
             if(method != http::verb::get) cout << res << endl;
-            cout << "\n===== HTTP RESPONSE END =====\n";
+            cout << "\n===== HTTP RESPONSE END =====\n\n";
             return res.body();
         }
         return "http error";

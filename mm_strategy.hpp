@@ -886,10 +886,11 @@ public:
         return signal;
     }
 
-    pair<double, double> compute_order_size_hedge(const Signal& signal){
+    tuple<double, double, std_string, double> compute_order_size_hedge(const Signal& signal){
 
         double bid_size = 0.0;
         double ask_size = 0.0;
+        std_string hedge_decision = "—";
 
         // Convert inventory to USDT notional for risk calculations.
         double inv_usdt = signal.maker_inventory * signal.maker_mid; // USDT per PEPE for maker state
@@ -911,7 +912,7 @@ public:
         cout << "target hedge gate: " << target_hedge_gate << "\n";
 
         cout << "overall hedge still needed to cover: " << hedge_usdt << "\n";
-        if(hedge_usdt < target_hedge_gate) return {0.0, 0.0}; // no need hedge
+        if(hedge_usdt < target_hedge_gate) return {0.0, 0.0, hedge_decision, target_hedge_usdt}; // no need hedge
 
         // Inventory limits in USDT.
         if(inv_usdt > 0.0){ // LONG INV, SHORT HEDGE
@@ -924,6 +925,8 @@ public:
 
             // Re-check actual notional AFTER normalization.
             if(ask_size < config.markets[config.hedge].base_size) ask_size = 0.0;
+
+            hedge_decision = "SHORT";
            
             cout << "short: " << ask_size << "\n";
         }
@@ -937,13 +940,15 @@ public:
 
             // Re-check actual notional AFTER normalization.
             if(bid_size < config.markets[config.hedge].base_size) bid_size = 0.0;
+            
+            hedge_decision = "LONG";
 
             // cout << "bid_size: " << bid_size << "\n";
             // cout << "ask_size: " << ask_size << "\n";
             cout << "long: " << bid_size << "\n";
         }
 
-        return {bid_size, ask_size};
+        return {bid_size, ask_size, hedge_decision, target_hedge_usdt};
     }
 
     Signal calculate_hedge(State& maker_state, State& hedge_state){
@@ -1065,10 +1070,13 @@ public:
         signal.my_bid = bid;
         signal.my_ask = ask;
 
-        auto [my_bid_size, my_ask_size] = compute_order_size_hedge(signal); // to change from execution to here
+        auto [my_bid_size, my_ask_size, hedge_decision, target_hedge_usdt] = compute_order_size_hedge(signal); // to change from execution to here
 
         signal.my_bid_size = my_bid_size;
         signal.my_ask_size = my_ask_size;
+
+        signal.hedge_decision = hedge_decision;
+        signal.target_hedge = target_hedge_usdt;
 
         return signal;
     }

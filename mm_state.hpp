@@ -89,6 +89,7 @@ public:
     OrderBook market_book;
     MarketFeatureState mfs;
     optional<Signal> last_signal;
+    optional<Signal> last_hedge_signal; // might combine to 1 signal
     std_string market;
 
     double last_mid = 0.0;
@@ -100,7 +101,6 @@ public:
     double inventory = 1.0;
     double realized_pnl = 0.0;
     double avg_entry_price = 0.0;
-    double mark_price = 0.0;
 
     deque<double> equity_history;
     deque<double> return_history;
@@ -124,12 +124,15 @@ public:
     int64_t depth_latency = 0;
     int64_t exchange_latency = 0;
 
+
+    double funding_rate = 0.0;
+    int64_t next_funding_ts = 0;
+
     bool initialized = false;
 
     State(MarketConfig& config, std_string market) : config(config), market(market), market_book(config, market)
     {
         cash = config.markets[market].initial_cash;
-        // cout << "state init market book mid: " << market_book.mid() << "\n";
         inventory = config.markets[market].initial_position;
     }
 
@@ -482,11 +485,6 @@ public:
             performance.sortino = sortino;
             performance.annualized_sortino = sortino * annualization_factor;
         }
-
-        cout << "SHARPE: " << performance.sharpe
-            << ", Annualized SHARPE: " << performance.annualized_sharpe
-            << ", SORTINO: " << performance.sortino
-            << ", Annualized SORTINO: " << performance.annualized_sortino << "\n";
 
         return performance;
     }

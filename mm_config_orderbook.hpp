@@ -102,12 +102,10 @@ public:
 
     int64_t exchange_latency;
     double gamma;
-    // double initial_position;
-    // double base_spread;
-    // double base_size;
     double max_inv;
     double target_notional;
     
+    bool hedge_enabled;
     double target_hedge_ratio; // NEW
 
     std_string folder_path;
@@ -149,7 +147,8 @@ public:
         micro_signal_model = params["models"]["micro_signal_model"].get<std_string>();
         residual_model = params["models"]["residual_model"].get<std_string>();
         toxicity_model = params["models"]["toxicity_model"].get<std_string>();
-
+        
+        hedge_enabled = params["hedge_enabled"].get<bool>();
 
         target_hedge_ratio = params["target_hedge_ratio"].get<double>();
 
@@ -179,47 +178,8 @@ public:
         markets[hedge].base_url = params["api"][hedge]["base_url"].get<std_string>();
         markets[hedge].endpoint = params["api"][hedge]["endpoint"].get<std_string>();
 
-
-
-        // markets["spot"].instrument = params["spot_instrument"].get<std_string>();
-        // markets["spot"].instrument_upper = markets["spot"].instrument;
-        // transform(markets["spot"].instrument_upper.begin(), markets["spot"].instrument_upper.end(), markets["spot"].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
-        // markets["spot"].base_spread = params["spot_base_spread"].get<double>();
-        // markets["spot"].base_size = params["spot_base_size"].get<double>();
-        // markets["spot"].initial_cash = params["spot_initial_cash"].get<double>();
-        // markets["spot"].maker_fee_rate = params["fees"]["spot_maker_fee_rate"].get<double>();
-        // markets["spot"].taker_fee_rate = params["fees"]["spot_taker_fee_rate"].get<double>();
-        // markets["spot"].hostname = params["api"]["spot"]["hostname"].get<std_string>();
-        // markets["spot"].base_url = params["api"]["spot"]["base_url"].get<std_string>();
-        // markets["spot"].endpoint = params["api"]["spot"]["endpoint"].get<std_string>();
-
-        // markets["perps"].instrument = params["perps_instrument"].get<std_string>();
-        // markets["perps"].instrument_upper = markets["perps"].instrument;
-        // transform(markets["perps"].instrument_upper.begin(), markets["perps"].instrument_upper.end(), markets["perps"].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
-        // markets["perps"].base_spread = params["perps_base_spread"].get<double>();
-        // markets["perps"].base_size = params["perps_base_size"].get<double>();
-        // markets["perps"].initial_cash = params["perps_initial_cash"].get<double>();
-        // markets["perps"].maker_fee_rate = params["fees"]["perps_maker_fee_rate"].get<double>();
-        // markets["perps"].taker_fee_rate = params["fees"]["perps_taker_fee_rate"].get<double>();
-        // markets["perps"].hostname = params["api"]["perps"]["hostname"].get<std_string>();
-        // markets["perps"].base_url = params["api"]["perps"]["base_url"].get<std_string>();
-        // markets["perps"].endpoint = params["api"]["perps"]["endpoint"].get<std_string>();
-
-        // markets["testnet_perps"].instrument = params["testnet_perps_instrument"].get<std_string>();
-        // markets["testnet_perps"].instrument_upper = markets["testnet_perps"].instrument;
-        // transform(markets["testnet_perps"].instrument_upper.begin(), markets["testnet_perps"].instrument_upper.end(), markets["testnet_perps"].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
-        // markets["testnet_perps"].base_spread = params["testnet_perps_base_spread"].get<double>();
-        // markets["testnet_perps"].base_size = params["testnet_perps_base_size"].get<double>();
-        // markets["testnet_perps"].initial_cash = params["testnet_perps_initial_cash"].get<double>();
-        // markets["testnet_perps"].maker_fee_rate = params["fees"]["testnet_perps_maker_fee_rate"].get<double>();
-        // markets["testnet_perps"].taker_fee_rate = params["fees"]["testnet_perps_taker_fee_rate"].get<double>();
-        // markets["testnet_perps"].hostname = params["api"]["testnet_perps"]["hostname"].get<std_string>();
-        // markets["testnet_perps"].base_url = params["api"]["testnet_perps"]["base_url"].get<std_string>();
-        // markets["testnet_perps"].endpoint = params["api"]["testnet_perps"]["endpoint"].get<std_string>();
-
         exchange_latency = params["exchange_latency"].get<int64_t>();
         gamma = params["gamma"].get<double>();
-        // initial_position = params["initial_position"].get<double>();
         max_inv = params["max_inv"].get<double>();
         target_notional = params["target_notional"].get<double>();
 
@@ -293,6 +253,7 @@ public:
         else filters = data["symbols"][0]["filters"];
 
         for(auto& f: filters){
+
             if(f["filterType"] == "PRICE_FILTER"){
                 markets[hedge].tick_size = stod(f["tickSize"].get<std_string>());
                 markets[hedge].price_precision = get_precision(markets[hedge].tick_size);
@@ -316,7 +277,6 @@ public:
             }
         }
             
-
         cout << "\n===== MARKET CONFIG =====\n";
         cout << "exchange:          " << exchange + "_" + market << "\n";
         cout << "mode:              " << mode << "\n";
@@ -339,6 +299,12 @@ public:
         cout << "base_size:          " << markets[market].base_size << "\n";
         cout << "max_inv:            " << max_inv << "\n";
         cout << "target_notional:    " << target_notional << "\n";
+
+
+        cout << "hedge_enabled:      " << boolalpha << hedge_enabled << "\n";
+        cout << "target_hedge_ratio: " << target_hedge_ratio << "\n";
+
+
         cout << "initial_cash:       " << markets[market].initial_cash << "\n";
         cout << "maker_fee_rate:     " << markets[market].maker_fee_rate << "\n";
         cout << "taker_fee_rate:     " << markets[market].taker_fee_rate << "\n";
@@ -370,12 +336,12 @@ public:
 
         cout << "================================\n\n";
 
-        if(target_hedge_ratio > 0.0){
+        if(hedge_enabled){
 
             cout << "\n===== HEDGE CONFIG =====\n";
             cout << "exchange:          " << exchange + "_" + hedge << "\n";
             cout << "mode:              " << mode << "\n";
-            cout << "hedge:            " << hedge << "\n";
+            cout << "hedge:             " << hedge << "\n";
             cout << "instrument:        " << markets[hedge].instrument << "\n";
             cout << "instrument_upper:  " << markets[hedge].instrument_upper << "\n";
 

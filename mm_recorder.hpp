@@ -118,7 +118,7 @@ public:
 
     std_string build_file_path(const std_string& file, const int& file_id){
         ostringstream ss;
-        ss << folder_path << '/' << file << '_' << setw(6) << setfill('0') << file_id << ".parquet";
+        ss << folder_path << '/' << market << '_' << file << '_' << setw(6) << setfill('0') << file_id << ".parquet";
         
         cout << file << "_file_path: " << ss.str() << "\n";
         return ss.str();
@@ -138,7 +138,14 @@ public:
         folder_path = "data/runs/run_" + run_id;
         filesystem::create_directories(folder_path);
 
-        orderbook_snapshot_path = folder_path + "/orderbook_snapshot.json";
+        // orderbook_snapshot_path = folder_path + "/orderbook_snapshot.json";
+        // events_path = build_file_path("events", events_id++);
+        // snapshots_path = build_file_path("snapshots", snapshots_id++);
+        // trades_path = build_file_path("trades", trades_id++);
+        // quotes_path = build_file_path("quotes", quotes_id++);
+        // fills_path = build_file_path("fills", fills_id++);
+
+        orderbook_snapshot_path = folder_path + "/" + market + "_orderbook_snapshot.json";
         events_path = build_file_path("events", events_id++);
         snapshots_path = build_file_path("snapshots", snapshots_id++);
         trades_path = build_file_path("trades", trades_id++);
@@ -284,6 +291,21 @@ public:
         };
 
         ofstream(manifest_path) << manifest.dump(2);
+
+        cout << "\n===== PERFORMANCE =====\n";
+        cout << "market:                   " << market << "\n";
+        cout << "pnl:                      " << manifest["performance"]["pnl"] << "\n";
+        cout << "sharpe:                   " << manifest["performance"]["sharpe"] << "\n";
+        cout << "annualized_sharpe:        " << manifest["performance"]["annualized_sharpe"] << "\n";
+        cout << "sortino:                  " << manifest["performance"]["sortino"] << "\n";
+        cout << "annualized_sortino:       " << manifest["performance"]["annualized_sortino"] << "\n";
+        cout << "fees_paid:                " << manifest["performance"]["fees_paid"] << "\n";
+        cout << "notional_traded:          " << manifest["performance"]["notional_traded"] << "\n";
+        cout << "fees_per_fill:            " << manifest["performance"]["fees_per_fill"] << "\n";
+        cout << "pnl_per_fill:             " << manifest["performance"]["pnl_per_fill"] << "\n";
+
+        cout << "================================\n";
+
         cout << "DATASETS SAVED SUCCESSFULLY\n";
         cout << "Saved run → " << folder_path << "\n";
     }
