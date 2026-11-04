@@ -379,44 +379,6 @@ export default function Dashboard() {
 
           <tbody>
 
-            {/* SIGNALS1 */}
-            <Section title="SIGNALS1" />
-
-            <Row
-              label="Maker Delta"
-              value={snapshot.hedge.signals1.maker_delta.toFixed(10)}
-            />
-
-            <Row
-              label="Hedge Delta"
-              value={snapshot.hedge.signals1.hedge_delta.toFixed(10)}
-            />
-
-            <Row
-              label="Net Delta"
-              value={snapshot.hedge.signals1.net_delta.toFixed(10)}
-            />
-
-            <Row
-              label="Target Hedge Ratio"
-              value={snapshot.hedge.signals1.target_hedge_ratio.toFixed(10)}
-            />
-
-            <Row
-              label="Target Hedge"
-              value={snapshot.hedge.signals1.target_hedge.toFixed(10)}
-            />
-
-            <Row
-              label="Hedge Decision"
-              value={snapshot.hedge.signals1.hedge_decision}
-            />
-
-            <Row
-              label="Target Hedge Delta"
-              value={snapshot.hedge.signals1.target_hedge.toFixed(10)}
-            />
-
             {/* MARKET */}
             <Section title="MARKET" />
 
@@ -466,18 +428,13 @@ export default function Dashboard() {
             />
 
             <Row
-              label="Last Trade"
-              value={snapshot.hedge.market.trade}
-            />
-
-            <Row
               label="Basis"
               value={snapshot.hedge.market.basis.toFixed(10)}
             />
 
             <Row
               label="Funding"
-              value={snapshot.hedge.market.funding_rate.toFixed(8)}
+              value={snapshot.hedge.market.funding_rate.toFixed(10)}
             />
 
             <Row
@@ -485,75 +442,65 @@ export default function Dashboard() {
               value={snapshot.hedge.market.next_funding_ts}
             />
 
+            <Row
+              label="Last Trade"
+              value={snapshot.hedge.market.trade}
+            />
+
             {/* REGIME */}
             <Section title="REGIME" />
 
             <Row
               label="Regime"
-              value={snapshot.hedge.regime.regime}
+              value={snapshot.maker.regime.regime}
             />
 
             <Row
               label="Confidence"
-              value={snapshot.hedge.regime.confidence.toFixed(3)}
+              value={snapshot.maker.regime.confidence.toFixed(3)}
             />
 
             {/* SIGNALS */}
             <Section title="SIGNALS" />
 
             <Row
-              label="Spread Multiplier"
-              value={snapshot.hedge.signals.spread_multiplier.toFixed(2)}
+              label="Maker Delta"
+              value={snapshot.hedge.signals.maker_delta.toFixed(10)}
             />
 
             <Row
-              label="Inventory Target"
-              value={snapshot.hedge.signals.inventory_target.toFixed(2)}
+              label="Hedge Delta"
+              value={snapshot.hedge.signals.hedge_delta.toFixed(10)}
             />
 
             <Row
-              label="Alpha Trade Imb"
-              value={snapshot.hedge.signals.alpha_trade_imb.toFixed(2)}
+              label="Net Delta"
+              value={snapshot.hedge.signals.net_delta.toFixed(10)}
             />
 
             <Row
-              label="Alpha Struct"
-              value={snapshot.hedge.signals.alpha_struct.toFixed(2)}
+              label="Hedge Threshold"
+              value={snapshot.hedge.signals.hedge_threshold.toFixed(10)}
             />
 
             <Row
-              label="Alpha Residual"
-              value={snapshot.hedge.signals.alpha_residual.toFixed(2)}
+              label="Target Hedge Ratio"
+              value={snapshot.hedge.signals.hedge_ratio.toFixed(2)}
             />
 
             <Row
-              label="Fair Value"
-              value={snapshot.hedge.signals.fair.toFixed(10)}
+              label="Target Hedge"
+              value={snapshot.hedge.signals.target_hedge.toFixed(10)}
             />
 
             <Row
-              label="Inventory Skew"
-              value={snapshot.hedge.signals.skew.toFixed(4)}
+              label="Hedge Decision"
+              value={snapshot.hedge.signals.hedge_decision}
             />
 
             <Row
-              label="Toxicity"
-              value={snapshot.hedge.signals.tox.toFixed(10)}
-            />
-
-            <Row
-              label="Residual Signal Quality"
-              value={snapshot.hedge.signals.residual_signal_quality.toFixed(2)}
-            />
-
-            <Row
-              label="Toxicity Signal Quality"
-              value={snapshot.hedge.signals.toxicity_signal_quality.toFixed(10)}
-            />
-
-            <Row
-              label="Reservation"
-              value={snapshot.hedge.signals.reservation.toFixed(10)}
+              label="Target Hedge Delta"
+              value={snapshot.hedge.signals.target_hedge.toFixed(10)}
             />
 
             {/* QUOTES */}
@@ -646,6 +593,13 @@ export default function Dashboard() {
               label="Fees Paid"
               value={
                 <PnL value={-snapshot.hedge.risk.fees_paid} />
+              }
+            />
+
+            <Row
+              label="Funding Paid / Received"
+              value={
+                <PnL value={-snapshot.hedge.risk.funding} />
               }
             />
 
@@ -1065,16 +1019,6 @@ const emptySnapshot = {
     },
   },
   hedge : {
-    signals1: {
-      maker_delta: 0,
-      hedge_delta: 0,
-      net_delta: 0,
-      target_hedge_ratio: 0,
-      target_hedge: 0,
-      hedge_decision: "—",
-      target_hedge: 0,
-    },
-
      market: {
       instrument: "—",
       mid: 0,
@@ -1087,24 +1031,25 @@ const emptySnapshot = {
       ewma_vol: 0,
       order_imbalance: 0,
       trade_imbalance: 0,
-      trade: "—",
       basis: 0,
       funding_rate: 0,
       next_funding_ts: "—",
+      trade: "—",
+    },
+
+    regime: {
+      regime: "unknown_regime",
+      confidence: 0,
     },
 
     signals: {
-      spread_multiplier: 0,
-      inventory_target: 0,
-      alpha_trade_imb: 0,
-      alpha_struct: 0,
-      alpha_residual: 0,
-      fair: 0,
-      skew: 0,
-      tox: 0,
-      residual_signal_quality: 0,
-      toxicity_signal_quality: 0,
-      reservation: 0,
+      maker_delta: 0,
+      hedge_delta: 0,
+      net_delta: 0,
+      hedge_threshold: 0,
+      hedge_ratio: 0,
+      hedge_decision: "—",
+      target_hedge: 0,
     },
 
     regime: {
@@ -1136,6 +1081,7 @@ const emptySnapshot = {
       realized_pnl: 0,
       unrealized_pnl: 0,
       fees_paid: 0,
+      funding: 0,
       total_pnl: 0,
     },
 

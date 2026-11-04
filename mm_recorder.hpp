@@ -89,7 +89,7 @@ public:
     MarketConfig& config;
     State& state;
     const ordered_json& params;
-    const std_string market;
+    std_string market;
 
     vector<EventRow> events;
     vector<SnapshotRow> snapshots;
@@ -113,14 +113,14 @@ public:
     int fills_id = 0;
     int total_fills = 0;
 
-    DatasetRecorder(MarketConfig& config, State& state, const ordered_json& params, const std_string market)
+    DatasetRecorder(MarketConfig& config, State& state, const ordered_json& params, std_string market)
         : config(config), state(state), params(params), market(market) {initialize();}
 
     std_string build_file_path(const std_string& file, const int& file_id){
         ostringstream ss;
         ss << folder_path << '/' << market << '_' << file << '_' << setw(6) << setfill('0') << file_id << ".parquet";
         
-        cout << file << "_file_path: " << ss.str() << "\n";
+        cout << market << "_" << file << "_file_path: " << ss.str() << "\n";
         return ss.str();
     }
 
@@ -135,15 +135,9 @@ public:
         ss << put_time(&tm, "%Y%m%d_%H%M%S");
 
         run_id = ss.str();
-        folder_path = "data/runs/run_" + run_id;
+        // folder_path = "data/runs/run_" + run_id;
+        folder_path = "runs/run_" + run_id;
         filesystem::create_directories(folder_path);
-
-        // orderbook_snapshot_path = folder_path + "/orderbook_snapshot.json";
-        // events_path = build_file_path("events", events_id++);
-        // snapshots_path = build_file_path("snapshots", snapshots_id++);
-        // trades_path = build_file_path("trades", trades_id++);
-        // quotes_path = build_file_path("quotes", quotes_id++);
-        // fills_path = build_file_path("fills", fills_id++);
 
         orderbook_snapshot_path = folder_path + "/" + market + "_orderbook_snapshot.json";
         events_path = build_file_path("events", events_id++);
@@ -312,23 +306,27 @@ public:
 
     void log_snapshot(const Signal& signal){
         SnapshotRow row;
-  
+
         row.ts = signal.ts;
         row.trade_latency = signal.trade_latency;
         row.depth_latency = signal.depth_latency;
         row.exchange_latency = signal.exchange_latency;
         row.symbol = config.markets[market].instrument_upper;
-
+        
         row.mid = signal.mid;
         row.mid_tick = config.to_tick(signal.mid, market);
+        row.maker_mid = signal.maker_mid;
+        row.hedge_mid = signal.hedge_mid;
         row.microprice = signal.microprice;
         row.microprice_dev = signal.microprice_dev;
         row.spread = signal.spread;
 
+        row.best_bid_tick = signal.bid_tick;
+        row.best_ask_tick = signal.ask_tick;
         row.best_bid = signal.best_bid;
         row.best_ask = signal.best_ask;
-        row.best_bid_tick = config.to_tick(signal.best_bid, market);
-        row.best_ask_tick = config.to_tick(signal.best_ask, market);
+        row.bid_size = signal.bid_size;
+        row.ask_size = signal.ask_size;
 
         row.order_imbalance = signal.order_imbalance;
         row.trade_imbalance = signal.trade_imbalance;
@@ -336,11 +334,18 @@ public:
         row.queue_ahead_bid = signal.queue_ahead_bid;
         row.queue_ahead_ask = signal.queue_ahead_ask;
 
+        row.basis = signal.basis;
+        row.funding_rate = signal.funding_rate;
+        row.next_funding_ts = signal.next_funding_ts;
+
         row.inventory = signal.inventory;
+        row.maker_inventory = signal.maker_inventory;
+        row.hedge_inventory = signal.hedge_inventory;
         row.realized_pnl = signal.realized_pnl;
         row.unrealized_pnl = signal.unrealized_pnl;
         row.total_pnl = signal.total_pnl;
         row.fees_paid = signal.fees_paid;
+        row.funding = signal.funding;
         row.equity = signal.equity;
 
         row.fair = signal.fair;
@@ -364,20 +369,26 @@ public:
         row.residual_signal_quality = signal.residual_signal_quality;
         row.toxicity_signal_quality = signal.toxicity_signal_quality;
 
+        row.bid_delta = signal.bid_delta;
+        row.ask_delta = signal.ask_delta;
+        row.quote_churn = signal.quote_churn;
+
         row.my_bid = signal.my_bid;
         row.my_ask = signal.my_ask;
+        row.my_spread = signal.my_spread;
         row.my_bid_tick = config.to_tick(signal.my_bid, market);
         row.my_ask_tick = config.to_tick(signal.my_ask, market);
+        row.my_bid_size = signal.my_bid_size;
+        row.my_ask_size = signal.my_ask_size;
+
+        row.hedge_decision = signal.hedge_decision;
+        row.target_hedge = signal.target_hedge;
 
         row.bid_distance_touch = signal.my_bid - signal.best_bid;
         row.ask_distance_touch = signal.my_ask - signal.best_ask;
         row.bid_distance_spread = signal.my_bid - signal.best_ask;
         row.ask_distance_spread = signal.my_ask - signal.best_bid;
 
-        row.bid_delta = signal.bid_delta;
-        row.ask_delta = signal.ask_delta;
-        row.quote_churn = signal.quote_churn;
-    
         snapshots.push_back(move(row));
 
         if(snapshots.size() >= config.SNAPSHOTS_CHUNK){
@@ -401,14 +412,18 @@ public:
 
         DoubleBuilder mid_b(pool);
         Int64Builder mid_tick_b(pool);
+        DoubleBuilder maker_mid_b(pool);
+        DoubleBuilder hedge_mid_b(pool);
         DoubleBuilder microprice_b(pool);
         DoubleBuilder microprice_dev_b(pool);
         DoubleBuilder spread_b(pool);
 
-        DoubleBuilder best_bid_b(pool);
-        DoubleBuilder best_ask_b(pool);
         Int64Builder best_bid_tick_b(pool);
         Int64Builder best_ask_tick_b(pool);
+        DoubleBuilder best_bid_b(pool);
+        DoubleBuilder best_ask_b(pool);
+        DoubleBuilder bid_size_b(pool);
+        DoubleBuilder ask_size_b(pool);
 
         DoubleBuilder order_imbalance_b(pool);
         DoubleBuilder trade_imbalance_b(pool);
@@ -416,11 +431,18 @@ public:
         DoubleBuilder queue_ahead_bid_b(pool);
         DoubleBuilder queue_ahead_ask_b(pool);
 
+        DoubleBuilder basis_b(pool);
+        DoubleBuilder funding_rate_b(pool);
+        Int64Builder next_funding_ts_b(pool);
+
         DoubleBuilder inventory_b(pool);
+        DoubleBuilder maker_inventory_b(pool);
+        DoubleBuilder hedge_inventory_b(pool);
         DoubleBuilder realized_pnl_b(pool);
         DoubleBuilder unrealized_pnl_b(pool);
         DoubleBuilder total_pnl_b(pool);
         DoubleBuilder fees_paid_b(pool);
+        DoubleBuilder funding_b(pool);
         DoubleBuilder equity_b(pool);
 
         DoubleBuilder fair_b(pool);
@@ -444,20 +466,26 @@ public:
         DoubleBuilder residual_signal_quality_b(pool);
         DoubleBuilder toxicity_signal_quality_b(pool);
 
+        DoubleBuilder bid_delta_b(pool);
+        DoubleBuilder ask_delta_b(pool);
+        DoubleBuilder quote_churn_b(pool);
+
         DoubleBuilder my_bid_b(pool);
         DoubleBuilder my_ask_b(pool);
+        DoubleBuilder my_spread_b(pool);
         Int64Builder my_bid_tick_b(pool);
         Int64Builder my_ask_tick_b(pool);
+        DoubleBuilder my_bid_size_b(pool);
+        DoubleBuilder my_ask_size_b(pool);
+
+        StringBuilder hedge_decision_b(pool);
+        DoubleBuilder target_hedge_b(pool);
 
         DoubleBuilder bid_distance_touch_b(pool);
         DoubleBuilder ask_distance_touch_b(pool);
         DoubleBuilder bid_distance_spread_b(pool);
         DoubleBuilder ask_distance_spread_b(pool);
-
-        DoubleBuilder bid_delta_b(pool);
-        DoubleBuilder ask_delta_b(pool);
-        DoubleBuilder quote_churn_b(pool);
-
+        
         // -------------------------
         // FILL
         // -------------------------
@@ -470,26 +498,37 @@ public:
 
             mid_b.Append(r.mid);
             mid_tick_b.Append(r.mid_tick);
+            maker_mid_b.Append(r.maker_mid);
+            hedge_mid_b.Append(r.hedge_mid);
             microprice_b.Append(r.microprice);
             microprice_dev_b.Append(r.microprice_dev);
             spread_b.Append(r.spread);
 
-            best_bid_b.Append(r.best_bid);
-            best_ask_b.Append(r.best_ask);
             best_bid_tick_b.Append(r.best_bid_tick);
             best_ask_tick_b.Append(r.best_ask_tick);
+            best_bid_b.Append(r.best_bid);
+            best_ask_b.Append(r.best_ask);
+            bid_size_b.Append(r.bid_size);
+            ask_size_b.Append(r.ask_size);
 
             order_imbalance_b.Append(r.order_imbalance);
             trade_imbalance_b.Append(r.trade_imbalance);
             volatility_b.Append(r.volatility);
             queue_ahead_bid_b.Append(r.queue_ahead_bid);
             queue_ahead_ask_b.Append(r.queue_ahead_ask);
+            
+            basis_b.Append(r.basis);
+            funding_rate_b.Append(r.funding_rate);
+            next_funding_ts_b.Append(r.next_funding_ts);
 
             inventory_b.Append(r.inventory);
+            maker_inventory_b.Append(r.maker_inventory);
+            hedge_inventory_b.Append(r.hedge_inventory);
             realized_pnl_b.Append(r.realized_pnl);
             unrealized_pnl_b.Append(r.unrealized_pnl);
             total_pnl_b.Append(r.total_pnl);
             fees_paid_b.Append(r.fees_paid);
+            funding_b.Append(r.funding);
             equity_b.Append(r.equity);
 
             fair_b.Append(r.fair);
@@ -513,40 +552,47 @@ public:
             residual_signal_quality_b.Append(r.residual_signal_quality);
             toxicity_signal_quality_b.Append(r.toxicity_signal_quality);
 
+            bid_delta_b.Append(r.bid_delta);
+            ask_delta_b.Append(r.ask_delta);
+            quote_churn_b.Append(r.quote_churn);
+
             my_bid_b.Append(r.my_bid);
             my_ask_b.Append(r.my_ask);
+            my_spread_b.Append(r.my_spread);
             my_bid_tick_b.Append(r.my_bid_tick);
             my_ask_tick_b.Append(r.my_ask_tick);
+            my_bid_size_b.Append(r.my_bid_size);
+            my_ask_size_b.Append(r.my_ask_size);
+
+            hedge_decision_b.Append(r.hedge_decision);
+            target_hedge_b.Append(r.target_hedge);
 
             bid_distance_touch_b.Append(r.bid_distance_touch);
             ask_distance_touch_b.Append(r.ask_distance_touch);
             bid_distance_spread_b.Append(r.bid_distance_spread);
             ask_distance_spread_b.Append(r.ask_distance_spread);
-
-            bid_delta_b.Append(r.bid_delta);
-            ask_delta_b.Append(r.ask_delta);
-            quote_churn_b.Append(r.quote_churn);
         }
-
+        
         // -------------------------
         // FINISH ARRAYS
         // -------------------------
         shared_ptr<Array> ts_arr, trade_latency_arr, depth_latency_arr, exchange_latency_arr, symbol_arr, mid_arr, mid_tick_arr;
-        shared_ptr<Array> microprice_arr, microprice_dev_arr, spread_arr;
-        shared_ptr<Array> best_bid_arr, best_ask_arr, best_bid_tick_arr, best_ask_tick_arr;
+        shared_ptr<Array> maker_mid_arr, hedge_mid_arr, microprice_arr, microprice_dev_arr, spread_arr;
+        shared_ptr<Array> best_bid_tick_arr, best_ask_tick_arr, best_bid_arr, best_ask_arr, bid_size_arr, ask_size_arr;
         shared_ptr<Array> order_imbalance_arr, trade_imbalance_arr, volatility_arr;
-        shared_ptr<Array> queue_ahead_bid_arr, queue_ahead_ask_arr;
-        shared_ptr<Array> inventory_arr, realized_pnl_arr, unrealized_pnl_arr, total_pnl_arr, fees_paid_arr, equity_arr;
+        shared_ptr<Array> queue_ahead_bid_arr, queue_ahead_ask_arr, basis_arr, funding_rate_arr, next_funding_ts_arr;
+        shared_ptr<Array> inventory_arr, maker_inventory_arr, hedge_inventory_arr;
+        shared_ptr<Array> realized_pnl_arr, unrealized_pnl_arr, total_pnl_arr, fees_paid_arr, funding_arr, equity_arr;
         shared_ptr<Array> fair_arr, skew_arr, struct_delta_arr, micro_signal_delta_arr, residual_delta_arr, reservation_arr;
         shared_ptr<Array> regime_arr, regime_id_arr, regime_prob_arr;
         shared_ptr<Array> alpha_trade_imb_arr, alpha_struct_arr, alpha_residual_arr;
         shared_ptr<Array> spread_multiplier_arr, inventory_target_arr;
         shared_ptr<Array> tox_arr, k_spread_arr, k_order_size_arr, residual_signal_quality_arr, toxicity_signal_quality_arr;
-        shared_ptr<Array> my_bid_arr, my_ask_arr, my_bid_tick_arr, my_ask_tick_arr;
-        shared_ptr<Array> bid_distance_touch_arr, ask_distance_touch_arr;
-        shared_ptr<Array> bid_distance_spread_arr, ask_distance_spread_arr;
         shared_ptr<Array> bid_delta_arr, ask_delta_arr, quote_churn_arr;
-
+        shared_ptr<Array> my_bid_arr, my_ask_arr, my_spread_arr, my_bid_tick_arr, my_ask_tick_arr, my_bid_size_arr, my_ask_size_arr;
+        shared_ptr<Array> hedge_decision_arr, target_hedge_arr;
+        shared_ptr<Array> bid_distance_touch_arr, ask_distance_touch_arr, bid_distance_spread_arr, ask_distance_spread_arr;
+        
         ts_b.Finish(&ts_arr);
         trade_latency_b.Finish(&trade_latency_arr);
         depth_latency_b.Finish(&depth_latency_arr);
@@ -555,14 +601,18 @@ public:
 
         mid_b.Finish(&mid_arr);
         mid_tick_b.Finish(&mid_tick_arr);
+        maker_mid_b.Finish(&maker_mid_arr);
+        hedge_mid_b.Finish(&hedge_mid_arr);
         microprice_b.Finish(&microprice_arr);
         microprice_dev_b.Finish(&microprice_dev_arr);
         spread_b.Finish(&spread_arr);
 
-        best_bid_b.Finish(&best_bid_arr);
-        best_ask_b.Finish(&best_ask_arr);
         best_bid_tick_b.Finish(&best_bid_tick_arr);
         best_ask_tick_b.Finish(&best_ask_tick_arr);
+        best_bid_b.Finish(&best_bid_arr);
+        best_ask_b.Finish(&best_ask_arr);
+        bid_size_b.Finish(&bid_size_arr);
+        ask_size_b.Finish(&ask_size_arr);
 
         order_imbalance_b.Finish(&order_imbalance_arr);
         trade_imbalance_b.Finish(&trade_imbalance_arr);
@@ -570,11 +620,18 @@ public:
         queue_ahead_bid_b.Finish(&queue_ahead_bid_arr);
         queue_ahead_ask_b.Finish(&queue_ahead_ask_arr);
 
+        basis_b.Finish(&basis_arr);
+        funding_rate_b.Finish(&funding_rate_arr);
+        next_funding_ts_b.Finish(&next_funding_ts_arr);
+
         inventory_b.Finish(&inventory_arr);
+        maker_inventory_b.Finish(&maker_inventory_arr);
+        hedge_inventory_b.Finish(&hedge_inventory_arr);
         realized_pnl_b.Finish(&realized_pnl_arr);
         unrealized_pnl_b.Finish(&unrealized_pnl_arr);
         total_pnl_b.Finish(&total_pnl_arr);
         fees_paid_b.Finish(&fees_paid_arr);
+        funding_b.Finish(&funding_arr);
         equity_b.Finish(&equity_arr);
 
         fair_b.Finish(&fair_arr);
@@ -598,19 +655,25 @@ public:
         residual_signal_quality_b.Finish(&residual_signal_quality_arr);
         toxicity_signal_quality_b.Finish(&toxicity_signal_quality_arr);
 
+        bid_delta_b.Finish(&bid_delta_arr);
+        ask_delta_b.Finish(&ask_delta_arr);
+        quote_churn_b.Finish(&quote_churn_arr);
+
         my_bid_b.Finish(&my_bid_arr);
         my_ask_b.Finish(&my_ask_arr);
+        my_spread_b.Finish(&my_spread_arr);
         my_bid_tick_b.Finish(&my_bid_tick_arr);
         my_ask_tick_b.Finish(&my_ask_tick_arr);
+        my_bid_size_b.Finish(&my_bid_size_arr);
+        my_ask_size_b.Finish(&my_ask_size_arr);
+
+        hedge_decision_b.Finish(&hedge_decision_arr);
+        target_hedge_b.Finish(&target_hedge_arr);
 
         bid_distance_touch_b.Finish(&bid_distance_touch_arr);
         ask_distance_touch_b.Finish(&ask_distance_touch_arr);
         bid_distance_spread_b.Finish(&bid_distance_spread_arr);
         ask_distance_spread_b.Finish(&ask_distance_spread_arr);
-
-        bid_delta_b.Finish(&bid_delta_arr);
-        ask_delta_b.Finish(&ask_delta_arr);
-        quote_churn_b.Finish(&quote_churn_arr);
 
         // -------------------------
         // SCHEMA
@@ -624,14 +687,18 @@ public:
 
             field("mid", float64()),
             field("mid_tick", int64()),
+            field("maker_mid", float64()),
+            field("hedge_mid", float64()),
             field("microprice", float64()),
             field("microprice_dev", float64()),
             field("spread", float64()),
 
-            field("best_bid", float64()),
-            field("best_ask", float64()),
             field("best_bid_tick", int64()),
             field("best_ask_tick", int64()),
+            field("best_bid", float64()),
+            field("best_ask", float64()),
+            field("bid_size", float64()),
+            field("ask_size", float64()),
             
             field("order_imbalance", float64()),
             field("trade_imbalance", float64()),
@@ -639,11 +706,18 @@ public:
             field("queue_ahead_bid", float64()),
             field("queue_ahead_ask", float64()),
 
+            field("basis", float64()),
+            field("funding_rate", float64()),
+            field("next_funding_ts", int64()),
+
             field("inventory", float64()),
+            field("maker_inventory", float64()),
+            field("hedge_inventory", float64()),
             field("realized_pnl", float64()),
             field("unrealized_pnl", float64()),
             field("total_pnl", float64()),
             field("fees_paid", float64()),
+            field("funding", float64()),
             field("equity", float64()),
 
             field("fair", float64()),
@@ -667,19 +741,25 @@ public:
             field("residual_signal_quality", float64()),
             field("toxicity_signal_quality", float64()),
 
+            field("bid_delta", float64()),
+            field("ask_delta", float64()),
+            field("quote_churn", float64()),
+
             field("my_bid", float64()),
             field("my_ask", float64()),
+            field("my_spread", float64()),
             field("my_bid_tick", int64()),
             field("my_ask_tick", int64()),
+            field("my_bid_size", float64()),
+            field("my_ask_size", float64()),
+
+            field("hedge_decision", utf8()),
+            field("target_hedge", float64()),
 
             field("bid_distance_touch", float64()),
             field("ask_distance_touch", float64()),
             field("bid_distance_spread", float64()),
-            field("ask_distance_spread", float64()),
-
-            field("bid_delta", float64()),
-            field("ask_delta", float64()),
-            field("quote_churn", float64())
+            field("ask_distance_spread", float64())
         });
 
         // -------------------------
@@ -687,20 +767,20 @@ public:
         // -------------------------
         auto table = arrow::Table::Make(schema, {
             ts_arr, trade_latency_arr, depth_latency_arr, exchange_latency_arr, symbol_arr, mid_arr, mid_tick_arr,
-            microprice_arr, microprice_dev_arr, spread_arr,
-            best_bid_arr, best_ask_arr, best_bid_tick_arr, best_ask_tick_arr,
-            order_imbalance_arr, trade_imbalance_arr, volatility_arr,
-            queue_ahead_bid_arr, queue_ahead_ask_arr,
-            inventory_arr, realized_pnl_arr, unrealized_pnl_arr, total_pnl_arr, fees_paid_arr, equity_arr,
+            maker_mid_arr, hedge_mid_arr, microprice_arr, microprice_dev_arr, spread_arr,
+            best_bid_tick_arr, best_ask_tick_arr, best_bid_arr, best_ask_arr, bid_size_arr, ask_size_arr,
+            order_imbalance_arr, trade_imbalance_arr, volatility_arr, queue_ahead_bid_arr, queue_ahead_ask_arr, 
+            basis_arr, funding_rate_arr, next_funding_ts_arr,
+            inventory_arr, maker_inventory_arr, hedge_inventory_arr,
+            realized_pnl_arr, unrealized_pnl_arr, total_pnl_arr, fees_paid_arr, funding_arr, equity_arr,
             fair_arr, skew_arr, struct_delta_arr, micro_signal_delta_arr, residual_delta_arr, reservation_arr,
             regime_arr, regime_id_arr, regime_prob_arr,
-            alpha_trade_imb_arr, alpha_struct_arr, alpha_residual_arr,
-            spread_multiplier_arr, inventory_target_arr,
+            alpha_trade_imb_arr, alpha_struct_arr, alpha_residual_arr, spread_multiplier_arr, inventory_target_arr,
             tox_arr, k_spread_arr, k_order_size_arr, residual_signal_quality_arr, toxicity_signal_quality_arr,
-            my_bid_arr, my_ask_arr, my_bid_tick_arr, my_ask_tick_arr,
-            bid_distance_touch_arr, ask_distance_touch_arr,
-            bid_distance_spread_arr, ask_distance_spread_arr,
-            bid_delta_arr, ask_delta_arr, quote_churn_arr
+            bid_delta_arr, ask_delta_arr, quote_churn_arr,
+            my_bid_arr, my_ask_arr, my_spread_arr, my_bid_tick_arr, my_ask_tick_arr, my_bid_size_arr, my_ask_size_arr,
+            hedge_decision_arr, target_hedge_arr,
+            bid_distance_touch_arr, ask_distance_touch_arr, bid_distance_spread_arr, ask_distance_spread_arr
         });
 
         // -------------------------

@@ -151,6 +151,8 @@ struct InstrumentConfig {
     std_string instrument;
     std_string instrument_upper;
 
+    double contract_size;
+
     double initial_position;
 
     double base_spread;
@@ -291,38 +293,42 @@ struct Toxicity {
 };
 
 struct Signal {
-    double target_hedge;
-    std_string hedge_decision;
-    double maker_inventory;
-    double hedge_inventory;
-    double maker_mid;
-    double hedge_mid;
-
-    double my_bid_size;
-    double my_ask_size;
-
     int64_t ts;
     int64_t trade_latency;
     int64_t depth_latency;
     int64_t exchange_latency;
+
+    int64_t bid_tick;
+    int64_t ask_tick;
+    double best_bid;
+    double best_ask;
+    double bid_size;
+    double ask_size;
+
     double mid;
+    double maker_mid;
+    double hedge_mid;
     double microprice;
     double microprice_dev;
     double spread;
-    double best_bid;
-    double best_ask;
 
     double order_imbalance;
     double trade_imbalance;
     double volatility;
     double queue_ahead_bid;
     double queue_ahead_ask;
+    double basis;
+    double funding_rate;
+    int64_t next_funding_ts;
 
     double inventory;
+    double maker_inventory;
+    double hedge_inventory;
     double realized_pnl;
     double unrealized_pnl;
     double total_pnl;
     double fees_paid;
+    double funding;
     double equity;
 
     double fair;
@@ -348,9 +354,14 @@ struct Signal {
     double ask_delta;
     double quote_churn;
 
-    double my_spread;
     double my_bid;
     double my_ask;
+    double my_spread;
+    double my_bid_size;
+    double my_ask_size;
+
+    std_string hedge_decision;
+    double target_hedge;
 };
 
 struct Order {
@@ -508,23 +519,6 @@ struct Snapshot {
 
     struct {
         struct {
-            double maker_delta;
-            double hedge_delta;
-            double net_delta;
-            double target_hedge_ratio;
-            double target_hedge;
-            std_string hedge_decision;
-
-            // double hedge_status;
-            // double inventory_target;
-            // double tox;
-            // double k_spread;
-            // double k_order_size;
-            // double residual_signal_quality;
-            // double toxicity_signal_quality;
-        } signals1;
-
-        struct {
             std_string instrument;
             double mid;
             double microprice;
@@ -549,19 +543,13 @@ struct Snapshot {
         } regime;
 
         struct {
-            double fair;
-            double skew;
-            double reservation;
-            double alpha_trade_imb;
-            double alpha_struct;
-            double alpha_residual;
-            double spread_multiplier;
-            double inventory_target;
-            double tox;
-            double k_spread;
-            double k_order_size;
-            double residual_signal_quality;
-            double toxicity_signal_quality;
+            double maker_delta;
+            double hedge_delta;
+            double net_delta;
+            double hedge_threshold;
+            double hedge_ratio;
+            std_string hedge_decision;
+            double target_hedge;
         } signals;
 
         struct {
@@ -588,6 +576,7 @@ struct Snapshot {
             double realized_pnl;
             double unrealized_pnl;
             double fees_paid;
+            double funding;
             double total_pnl;
         } risk;
 
@@ -611,14 +600,18 @@ struct SnapshotRow {
 
     double mid;
     int64_t mid_tick;
-    double spread;
+    double maker_mid;
+    double hedge_mid;
     double microprice;
     double microprice_dev;
+    double spread;
 
-    double best_bid;
-    double best_ask;
     int64_t best_bid_tick;
     int64_t best_ask_tick;
+    double best_bid;
+    double best_ask;
+    double bid_size;
+    double ask_size;
 
     double order_imbalance;
     double trade_imbalance;
@@ -626,11 +619,18 @@ struct SnapshotRow {
     double queue_ahead_bid;
     double queue_ahead_ask;
 
+    double basis;
+    double funding_rate;
+    int64_t next_funding_ts;
+
     double inventory;
+    double maker_inventory;
+    double hedge_inventory;
     double realized_pnl;
     double unrealized_pnl;
     double total_pnl;
     double fees_paid;
+    double funding;
     double equity;
 
     double fair;
@@ -654,19 +654,25 @@ struct SnapshotRow {
     double residual_signal_quality;
     double toxicity_signal_quality;
 
+    double bid_delta;
+    double ask_delta;
+    double quote_churn;
+
     double my_bid;
     double my_ask;
+    double my_spread;
     int64_t my_bid_tick;
     int64_t my_ask_tick;
+    double my_bid_size;
+    double my_ask_size;
+
+    std_string hedge_decision;
+    double target_hedge;
 
     double bid_distance_touch;
     double ask_distance_touch;
     double bid_distance_spread;
     double ask_distance_spread;
-
-    double bid_delta;
-    double ask_delta;
-    double quote_churn;
 };
 
 struct TradeRow {

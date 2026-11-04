@@ -90,7 +90,6 @@ public:
     std_string exchange;
     std_string mode;
     std_string market;
-
     std_string hedge;
 
     std_string struct_model;
@@ -100,13 +99,14 @@ public:
     std_string toxicity_model;
     unordered_map<std_string, InstrumentConfig> markets;
 
+    bool hedge_enabled;
+    double hedge_threshold;
+    double hedge_ratio; // NEW
+
     int64_t exchange_latency;
     double gamma;
     double max_inv;
     double target_notional;
-    
-    bool hedge_enabled;
-    double target_hedge_ratio; // NEW
 
     std_string folder_path;
     size_t EVENTS_CHUNK;
@@ -138,8 +138,6 @@ public:
         exchange = params["exchange"].get<std_string>();
         mode = params["mode"].get<std_string>();
         market = params["market"].get<std_string>();
-
-
         hedge = params["hedge"].get<std_string>();
 
         struct_model = params["models"]["struct_model"].get<std_string>();
@@ -149,12 +147,14 @@ public:
         toxicity_model = params["models"]["toxicity_model"].get<std_string>();
         
         hedge_enabled = params["hedge_enabled"].get<bool>();
-
-        target_hedge_ratio = params["target_hedge_ratio"].get<double>();
+        hedge_threshold = params["hedge_threshold"].get<double>();
+        hedge_ratio = params["hedge_ratio"].get<double>();
 
         markets[market].instrument = params[market + "_instrument"].get<std_string>();
         markets[market].instrument_upper = markets[market].instrument;
         transform(markets[market].instrument_upper.begin(), markets[market].instrument_upper.end(), markets[market].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
+        markets[market].contract_size = params[market + "_contract_size"].get<double>();
+        
         markets[market].initial_position = params[market + "_initial_position"].get<double>();
         markets[market].base_spread = params[market + "_base_spread"].get<double>();
         markets[market].base_size = params[market + "_base_size"].get<double>();
@@ -168,6 +168,7 @@ public:
         markets[hedge].instrument = params[hedge + "_instrument"].get<std_string>();
         markets[hedge].instrument_upper = markets[hedge].instrument;
         transform(markets[hedge].instrument_upper.begin(), markets[hedge].instrument_upper.end(), markets[hedge].instrument_upper.begin(), [](unsigned char c){return toupper(c);});
+        markets[hedge].contract_size = params[hedge + "_contract_size"].get<double>();
         markets[hedge].initial_position = params[hedge + "_initial_position"].get<double>();
         markets[hedge].base_spread = params[hedge + "_base_spread"].get<double>();
         markets[hedge].base_size = params[hedge + "_base_size"].get<double>();
@@ -240,7 +241,6 @@ public:
 
         r = cpr::Get(cpr::Url{url});
         data = json::parse(r.text);
-        // json filters;
         
         if(hedge != "spot"){
             for(auto& symbol_entry: data["symbols"]){
@@ -261,7 +261,7 @@ public:
 
             if(f["filterType"] == "LOT_SIZE"){
                 markets[hedge].step_size = stod(f["stepSize"].get<std_string>());
-                markets[hedge].qty_precision   = get_precision(markets[hedge].step_size);
+                markets[hedge].qty_precision = get_precision(markets[hedge].step_size);
 
                 markets[hedge].min_qty = stod(f["minQty"].get<std_string>());
                 markets[hedge].max_qty = stod(f["maxQty"].get<std_string>());
@@ -292,6 +292,11 @@ public:
         cout << "toxicity_model:     " << toxicity_model << "\n";
 
         cout << "\n===== STRATEGY CONFIG =====\n";
+        cout << "hedge_enabled:      " << boolalpha << hedge_enabled << "\n";
+        cout << "hedge_threshold:    " << hedge_threshold << "\n";
+        cout << "hedge_ratio:        " << hedge_ratio << "\n";
+
+
         cout << "exchange_latency:   " << exchange_latency << "\n";
         cout << "gamma:              " << gamma << "\n";
         cout << "initial_position:   " << markets[market].initial_position << "\n";
@@ -299,10 +304,6 @@ public:
         cout << "base_size:          " << markets[market].base_size << "\n";
         cout << "max_inv:            " << max_inv << "\n";
         cout << "target_notional:    " << target_notional << "\n";
-
-
-        cout << "hedge_enabled:      " << boolalpha << hedge_enabled << "\n";
-        cout << "target_hedge_ratio: " << target_hedge_ratio << "\n";
 
 
         cout << "initial_cash:       " << markets[market].initial_cash << "\n";
@@ -337,7 +338,6 @@ public:
         cout << "================================\n\n";
 
         if(hedge_enabled){
-
             cout << "\n===== HEDGE CONFIG =====\n";
             cout << "exchange:          " << exchange + "_" + hedge << "\n";
             cout << "mode:              " << mode << "\n";
@@ -345,37 +345,29 @@ public:
             cout << "instrument:        " << markets[hedge].instrument << "\n";
             cout << "instrument_upper:  " << markets[hedge].instrument_upper << "\n";
 
-            cout << "initial_position:   " << markets[hedge].initial_position << "\n";
-            cout << "base_spread:        " << markets[hedge].base_spread << "\n";
-            cout << "base_size:          " << markets[hedge].base_size << "\n";
-            cout << "initial_cash:       " << markets[hedge].initial_cash << "\n";
-            cout << "maker_fee_rate:     " << markets[hedge].maker_fee_rate << "\n";
-            cout << "taker_fee_rate:     " << markets[hedge].taker_fee_rate << "\n";
+            cout << "initial_position:  " << markets[hedge].initial_position << "\n";
+            cout << "base_spread:       " << markets[hedge].base_spread << "\n";
+            cout << "base_size:         " << markets[hedge].base_size << "\n";
+            cout << "initial_cash:      " << markets[hedge].initial_cash << "\n";
+            cout << "maker_fee_rate:    " << markets[hedge].maker_fee_rate << "\n";
+            cout << "taker_fee_rate:    " << markets[hedge].taker_fee_rate << "\n";
 
             cout << "\n===== EXECUTION CONFIG =====\n";
-            cout << "tick_size:          " << markets[hedge].tick_size << "\n";
-            cout << "price_precision:    " << markets[hedge].price_precision << "\n";
-            cout << "step_size:          " << markets[hedge].step_size << "\n";
-            cout << "qty_precision:      " << markets[hedge].qty_precision << "\n";
-            cout << "min_qty:            " << markets[hedge].min_qty << "\n";
-            cout << "max_qty:            " << markets[hedge].max_qty << "\n";
-            cout << "min_notional_USDT:  " << markets[hedge].min_notional << "\n";
-            cout << "apply_min_market:   " << boolalpha << markets[hedge].apply_min_market << "\n";
-
-            cout << "\n===== STORAGE CONFIG =====\n";
-            cout << "folder_path:        " << folder_path << "\n";
-            cout << "events_chunk:       " << EVENTS_CHUNK << "\n";
-            cout << "snapshots_chunk:    " << SNAPSHOTS_CHUNK << "\n";
-            cout << "trades_chunk:       " << TRADES_CHUNK << "\n";
-            cout << "quotes_chunk:       " << QUOTES_CHUNK << "\n";
-            cout << "fills_chunk:        " << FILLS_CHUNK << "\n";
+            cout << "tick_size:         " << markets[hedge].tick_size << "\n";
+            cout << "price_precision:   " << markets[hedge].price_precision << "\n";
+            cout << "step_size:         " << markets[hedge].step_size << "\n";
+            cout << "qty_precision:     " << markets[hedge].qty_precision << "\n";
+            cout << "min_qty:           " << markets[hedge].min_qty << "\n";
+            cout << "max_qty:           " << markets[hedge].max_qty << "\n";
+            cout << "min_notional_USDT: " << markets[hedge].min_notional << "\n";
+            cout << "apply_min_market:  " << boolalpha << markets[hedge].apply_min_market << "\n";
 
             cout << "\n===== HTTP CONFIG =====\n";
-            cout << "host:               " << host << "\n";
-            cout << "port:               " << port << "\n";
-            cout << "hostname:           " << markets[hedge].hostname << "\n";
-            cout << "base_url:           " << markets[hedge].base_url << "\n";
-            cout << "endpoint:           " << markets[hedge].endpoint << "\n";
+            cout << "host:              " << host << "\n";
+            cout << "port:              " << port << "\n";
+            cout << "hostname:          " << markets[hedge].hostname << "\n";
+            cout << "base_url:          " << markets[hedge].base_url << "\n";
+            cout << "endpoint:          " << markets[hedge].endpoint << "\n";
 
             cout << "================================\n\n";
         }

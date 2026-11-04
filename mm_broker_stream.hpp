@@ -192,6 +192,7 @@ public:
     virtual void stop() = 0;
     virtual std_string sign(const std_string&) = 0;
     virtual double get_position() = 0;
+    virtual double get_funding_fees(const int64_t&, const int64_t&) = 0;
     virtual json place_limit(const Order&, const double&, const double&) = 0;
     virtual json place_market(const Order&) = 0;
     virtual json cancel_order(const Order&) = 0;
@@ -211,16 +212,16 @@ public:
             get_fee_rates();
         }
 
-    std_string open_user_stream(){
+    std_string open_user_stream() override {
         return "";
     }
 
-    void stop(){}
+    void stop() override {}
 
     // -------------------------
     // SIGNING
     // -------------------------
-    std_string sign(const std_string& query){
+    std_string sign(const std_string& query) override {
         unsigned char* digest;
         digest = HMAC(EVP_sha256(), config.api_secret.c_str(), config.api_secret.size(),
                       (unsigned char*)query.c_str(), query.size(), NULL, NULL);
@@ -255,11 +256,11 @@ public:
         config.markets["spot"].maker_fee_rate = stod(arr["standardCommission"]["maker"].get<std_string>());
         config.markets["spot"].taker_fee_rate = stod(arr["standardCommission"]["taker"].get<std_string>());
 
-        cout << "[BROKER] - maker_fee_rate: " << config.markets["spot"].maker_fee_rate << " (" << config.markets["spot"].maker_fee_rate * 100 << "%)\n";
-        cout << "[BROKER] - taker_fee_rate: " << config.markets["spot"].taker_fee_rate << " (" << config.markets["spot"].taker_fee_rate * 100 << "%)\n";
+        cout << "[BROKER] - spot_maker_fee_rate: " << config.markets["spot"].maker_fee_rate << " (" << config.markets["spot"].maker_fee_rate * 100 << "%)\n";
+        cout << "[BROKER] - spot_taker_fee_rate: " << config.markets["spot"].taker_fee_rate << " (" << config.markets["spot"].taker_fee_rate * 100 << "%)\n";
     }
 
-    double get_position(){
+    double get_position() override {
 
         std_string asset = config.markets["spot"].instrument_upper.substr(0, config.markets["spot"].instrument_upper.size() - 4);
 
@@ -283,10 +284,14 @@ public:
         return 0.0;
     }
 
+    double get_funding_fees(const int64_t& start_ts, const int64_t& end_ts) override {
+        return 0.0;
+    };
+
     // -------------------------
     // ORDER PLACEMENT
     // -------------------------
-    json place_limit(const Order& order, const double& price, const double& size){
+    json place_limit(const Order& order, const double& price, const double& size) override {
 
         ostringstream q;
         q << "newClientOrderId=" << order.client_oid
@@ -309,7 +314,7 @@ public:
         return json::parse(res);
     }
 
-    json place_market(const Order& order){
+    json place_market(const Order& order) override {
 
         ostringstream q;
         q << "&newClientOrderId=" << order.client_oid
@@ -330,7 +335,7 @@ public:
         return json::parse(res);
     }
 
-    json cancel_order(const Order& order){
+    json cancel_order(const Order& order) override {
 
         ostringstream q;
         q << "origClientOrderId=" << order.client_oid
@@ -375,7 +380,7 @@ public:
     BinanceSpotUserStream(MarketConfig& config, BinanceBroker& broker, ExecutionEventQueue& execution_event, BinanceClock& clock)
         : config(config), broker(broker), execution_event(execution_event), clock(clock) {}
 
-    void start(){
+    void start() override {
         running = true;
         stream_thread = thread([this](){run();});
         wait_until_connected();
@@ -511,7 +516,7 @@ public:
         throw runtime_error("userDataStream subscription aborted");
     }
 
-    void stop(){
+    void stop() override {
         cout << "STOPPING SPOT USER STREAM\n";
         running = false;
 
@@ -574,12 +579,13 @@ public:
         {
             http.initialize();
             get_fee_rates();
+            get_funding_fees(clock.now_ms() - 48LL * 60 * 60 * 1000, clock.now_ms());
         }
 
     // -------------------------
     // USER STREAM
     // -------------------------
-    std_string open_user_stream(){
+    std_string open_user_stream() override {
 
         std_string url = "/" + config.markets[market].endpoint + "/listenKey";
         vector<std_string> headers = {"X-MBX-APIKEY: " + config.api_key};
@@ -621,7 +627,7 @@ public:
         });
     }
 
-    void stop(){
+    void stop() override {
         keepalive_running = false;
         keepalive_cv.notify_one();
 
@@ -631,7 +637,7 @@ public:
     // -------------------------
     // SIGNING
     // -------------------------
-    std_string sign(const std_string& query){
+    std_string sign(const std_string& query) override {
         unsigned char* digest;
         digest = HMAC(EVP_sha256(), config.api_secret.c_str(), config.api_secret.size(),
                       (unsigned char*)query.c_str(), query.size(), NULL, NULL);
@@ -666,11 +672,11 @@ public:
         config.markets[market].maker_fee_rate = stod(arr["makerCommissionRate"].get<std_string>());
         config.markets[market].taker_fee_rate = stod(arr["takerCommissionRate"].get<std_string>());
 
-        cout << market << "_maker_fee_rate: " << config.markets[market].maker_fee_rate << " (" << config.markets[market].maker_fee_rate * 100 << "%)\n";
-        cout << market << "_taker_fee_rate: " << config.markets[market].taker_fee_rate << " (" << config.markets[market].taker_fee_rate * 100 << "%)\n";
+        cout << "[BROKER] - " << market << "_maker_fee_rate: " << config.markets[market].maker_fee_rate << " (" << config.markets[market].maker_fee_rate * 100 << "%)\n";
+        cout << "[BROKER] - " << market << "_taker_fee_rate: " << config.markets[market].taker_fee_rate << " (" << config.markets[market].taker_fee_rate * 100 << "%)\n";
     }
 
-    double get_position(){
+    double get_position() override {
 
         int64_t ts = clock.now_ms();
         ostringstream q;
@@ -691,10 +697,44 @@ public:
         return 0.0;
     }
 
+    double get_funding_fees(const int64_t& start_ts, const int64_t& end_ts){
+
+        int64_t ts = clock.now_ms();
+        ostringstream q;
+        q << "symbol=" << config.markets[market].instrument_upper
+          << "&incomeType=FUNDING_FEE"
+          << "&startTime=" << start_ts
+          << "&endTime=" << end_ts
+          << "&timestamp=" << ts
+          << "&recvWindow=5000";
+
+        std_string query = q.str();
+        std_string signature = sign(query);
+
+        std_string url = "/" + config.markets[market].endpoint + "/income?" + query + "&signature=" + signature;
+        vector<std_string> headers = {"X-MBX-APIKEY: " + config.api_key};
+   
+        auto res = http.request(http::verb::get, url, headers);
+        
+        auto funding = json::parse(res);
+        double amount = 0.0;
+
+        if(funding.empty()) cout << "[BROKER] - No funding fee transactions found in this period.\n";
+        else{
+            for(auto& f: funding){
+                amount = stod(f["income"].get<std_string>());
+
+                cout << "[BROKER] - FUNDING: " << amount << " " << f["asset"].get<std_string>() << "\n";
+            }
+        }
+        
+        return amount;
+    }
+
     // -------------------------
     // ORDER PLACEMENT
     // -------------------------
-    json place_limit(const Order& order, const double& price, const double& size){
+    json place_limit(const Order& order, const double& price, const double& size) override {
         
         ostringstream q;
         q << "newClientOrderId=" << order.client_oid
@@ -717,7 +757,7 @@ public:
         return json::parse(res);
     }
 
-    json place_market(const Order& order){
+    json place_market(const Order& order) override {
 
         ostringstream q;
         q << "newClientOrderId=" << order.client_oid
@@ -739,7 +779,7 @@ public:
         return json::parse(res);
     }
 
-    json cancel_order(const Order& order){
+    json cancel_order(const Order& order) override {
         
         ostringstream q;
         q << "origClientOrderId=" << order.client_oid
@@ -778,7 +818,7 @@ public:
     BinancePerpsUserStream(MarketConfig& config, BinanceBroker& broker, ExecutionEventQueue& execution_event, BinanceClock& clock)
         : config(config), broker(broker), execution_event(execution_event), clock(clock), market((config.mode == "live") ? "perps" : "testnet_perps") {}
 
-    void start(){
+    void start() override {
         running = true;
         stream_thread = thread([this](){run();});
         wait_until_connected();
@@ -839,7 +879,7 @@ public:
         }
     }
 
-    void stop(){
+    void stop() override {
         cout << "STOPPING PERPS USER STREAM\n";
         running = false;
 

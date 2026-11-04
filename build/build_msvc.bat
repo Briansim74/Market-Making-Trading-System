@@ -12,10 +12,10 @@ cl ^
  /Fd"%BUILD_DIR%\vc140.pdb" ^
  /Fo"%BUILD_DIR%\\" ^
  "%~1" ^
- "D:\OneDrive\Trading\Market Making\external\simdjson\src\simdjson.cpp" ^
- /I"D:\OneDrive\Trading\Market Making\external\simdjson\include" ^
- /I"D:\OneDrive\Trading\Market Making\external\simdjson\src" ^
- /I"D:\OneDrive\Trading\Market Making\external\xgboost\include" ^
+ "D:\OneDrive\Trading\Market Making\build\simdjson\src\simdjson.cpp" ^
+ /I"D:\OneDrive\Trading\Market Making\build\simdjson\include" ^
+ /I"D:\OneDrive\Trading\Market Making\build\simdjson\src" ^
+ /I"D:\OneDrive\Trading\Market Making\build\xgboost\include" ^
  /I"D:\vcpkg\installed\x64-windows\include" ^
  /DNOMINMAX ^
  /DWIN32_LEAN_AND_MEAN ^
@@ -23,7 +23,7 @@ cl ^
  /link ^
  /INCREMENTAL:NO ^
  /PDB:"%BUILD_DIR%\%~n1.pdb" ^
- /LIBPATH:"D:\OneDrive\Trading\Market Making\external\xgboost\lib" ^
+ /LIBPATH:"D:\OneDrive\Trading\Market Making\build\xgboost\lib" ^
  /LIBPATH:"D:\vcpkg\installed\x64-windows\lib" ^
 
  arrow.lib ^

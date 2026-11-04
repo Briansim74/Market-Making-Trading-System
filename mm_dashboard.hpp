@@ -502,15 +502,6 @@ public:
                 }}
             }},
             {"hedge", {
-                {"signals1", {
-                    {"maker_delta", snap.hedge.signals1.maker_delta},
-                    {"hedge_delta", snap.hedge.signals1.hedge_delta},
-                    {"net_delta", snap.hedge.signals1.net_delta},
-                    {"target_hedge_ratio", snap.hedge.signals1.target_hedge_ratio},
-                    {"target_hedge", snap.hedge.signals1.target_hedge},
-                    {"hedge_decision", snap.hedge.signals1.hedge_decision},
-                    {"target_hedge", snap.hedge.signals1.target_hedge},
-                }},
                 {"market", {
                     {"instrument", snap.hedge.market.instrument},
                     {"mid", snap.hedge.market.mid},
@@ -523,30 +514,23 @@ public:
                     {"ewma_vol", snap.hedge.market.ewma_vol},
                     {"order_imbalance", snap.hedge.market.order_imbalance},
                     {"trade_imbalance", snap.hedge.market.trade_imbalance},
-                    {"trade", snap.hedge.market.trade},
-
                     {"basis", snap.hedge.market.basis},
                     {"funding_rate", snap.hedge.market.funding_rate},
                     {"next_funding_ts", snap.hedge.market.next_funding_ts},
+                    {"trade", snap.hedge.market.trade},
                 }},
                 {"regime", {
                     {"regime", snap.hedge.regime.regime},
                     {"confidence", snap.hedge.regime.confidence},
                 }},
                 {"signals", {
-                    {"fair", snap.hedge.signals.fair},
-                    {"skew", snap.hedge.signals.skew},
-                    {"reservation", snap.hedge.signals.reservation},
-                    {"alpha_trade_imb", snap.hedge.signals.alpha_trade_imb},
-                    {"alpha_struct", snap.hedge.signals.alpha_struct},
-                    {"alpha_residual", snap.hedge.signals.alpha_residual},
-                    {"spread_multiplier", snap.hedge.signals.spread_multiplier},
-                    {"inventory_target", snap.hedge.signals.inventory_target},
-                    {"tox", snap.hedge.signals.tox},
-                    {"k_spread", snap.hedge.signals.k_spread},
-                    {"k_order_size", snap.hedge.signals.k_order_size},
-                    {"residual_signal_quality", snap.hedge.signals.residual_signal_quality},
-                    {"toxicity_signal_quality", snap.hedge.signals.toxicity_signal_quality},
+                    {"maker_delta", snap.hedge.signals.maker_delta},
+                    {"hedge_delta", snap.hedge.signals.hedge_delta},
+                    {"net_delta", snap.hedge.signals.net_delta},
+                    {"hedge_threshold", snap.hedge.signals.hedge_threshold},
+                    {"hedge_ratio", snap.hedge.signals.hedge_ratio},
+                    {"hedge_decision", snap.hedge.signals.hedge_decision},
+                    {"target_hedge", snap.hedge.signals.target_hedge},
                 }},
                 {"quotes", {
                     {"my_spread", snap.hedge.quotes.my_spread},
@@ -570,6 +554,7 @@ public:
                     {"realized_pnl", snap.hedge.risk.realized_pnl},
                     {"unrealized_pnl", snap.hedge.risk.unrealized_pnl},
                     {"fees_paid", snap.hedge.risk.fees_paid},
+                    {"funding", snap.hedge.risk.funding},
                     {"total_pnl", snap.hedge.risk.total_pnl},
                 }},
                 {"system", {

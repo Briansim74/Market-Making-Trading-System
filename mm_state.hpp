@@ -88,14 +88,16 @@ public:
     MarketConfig& config;
     OrderBook market_book;
     MarketFeatureState mfs;
-    optional<Signal> last_signal;
-    optional<Signal> last_hedge_signal; // might combine to 1 signal
+    optional<Signal> last_signal = Signal{};
+    optional<Signal> last_hedge_signal = Signal{}; // might combine to 1 signal
     std_string market;
 
     double last_mid = 0.0;
     double order_imbalance = 0.0;
     double trade_imbalance = 0.0;
     double ewma_var = 0.0;
+    double funding_rate = 0.0;
+    int64_t next_funding_ts = 0;
 
     double cash;
     double inventory = 1.0;
@@ -106,6 +108,7 @@ public:
     deque<double> return_history;
     double last_equity = 0.0;
     double fees_paid = 0.0;
+    double funding = 0.0;
     double notional_traded = 0.0;
 
     Hawkes bid_hawkes;
@@ -124,16 +127,13 @@ public:
     int64_t depth_latency = 0;
     int64_t exchange_latency = 0;
 
-
-    double funding_rate = 0.0;
-    int64_t next_funding_ts = 0;
-
     bool initialized = false;
 
-    State(MarketConfig& config, std_string market) : config(config), market(market), market_book(config, market)
+    State(MarketConfig& config, std_string market) : config(config), market(market), market_book(config, market),
+    cash(config.markets[market].initial_cash), inventory(config.markets[market].initial_position)
     {
-        cash = config.markets[market].initial_cash;
-        inventory = config.markets[market].initial_position;
+        // cash = config.markets[market].initial_cash;
+        // inventory = config.markets[market].initial_position;
     }
 
     double get_vol(){
