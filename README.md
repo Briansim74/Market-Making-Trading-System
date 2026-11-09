@@ -5,11 +5,13 @@ The system combines:
 - live L2 market data
 - deterministic historical replay
 - regime-dependent alpha
+- spot and cross-market microstructure signals
 - structural fair-value estimation
 - residual alpha
 - toxicity / adverse-selection modeling
 - queue-aware execution simulation
-- inventory-aware quoting
+- inventory-aware quoting and cross-market hedging
+- perpetual futures execution and position management
 - exchange execution and reconciliation
 
 The system has progressed from historical research and simulation to live capital deployment, allowing execution assumptions, fill models, latency, queue dynamics, and signal behavior to be evaluated against real exchange executions.
@@ -45,9 +47,10 @@ Regime Detection (GMM clustering)
         │
         ▼
 Alpha Stack
- ├─ Microstructure Alpha
+ ├─ Microstructure Alpha (Spot)
  ├─ Structural Alpha
  └─ Residual Alpha (XGBoost)
+ └─ Cross-Market Alpha (Perpetual Futures)
         │
         ▼
 Toxicity Model (expected markout - XGBoost)
@@ -60,6 +63,8 @@ Execution Model (queue + cancellations + fees)
         │
         ▼
 Inventory / Risk
+ ├─ Cross-Market Hedging
+ └─ Perpetual Futures Execution
         │
         ▼
 Dataset Generation & Research
@@ -188,6 +193,25 @@ Behavior:
 - improves at 1 - 5s horizons
 - acts as correction layer, not primary alpha
 
+### 4. Cross-Market Microstructure Alpha
+Perpetual futures provide an additional source of microstructure information for estimating short-horizon fair value.
+
+The signal layer incorporates derivative-market information to capture price discovery and order-flow dynamics that may not yet be reflected in the spot order book.
+
+Potential inputs include:
+- perpetual order-book imbalance
+- microprice deviation
+- trade imbalance
+- short-horizon returns
+- spot-perpetual basis
+- cross-market price divergence
+
+The objective is to identify incremental predictive information from perpetual market dynamics beyond existing spot microstructure signals.
+
+These signals can contribute to fair-value estimation and quote skew, allowing information across multiple markets to influence spot liquidity provision.
+
+Signal evaluation focuses on predictive contribution to future spot mid-price returns, conditional on existing spot signals.
+
 ## Toxicity Model (Execution Risk)
 Predicts expected signed markout conditional on execution:
 ```
@@ -269,16 +293,42 @@ Future work:
 - exchange acknowledgement delays
 
 ## Inventory / Risk
-Inventory treated as a continuous risk state.
+Inventory is treated as a continuous risk state rather than a static position constraint.
 
-Reservation price adjusts based on:
+Reservation prices and quote sizes adjust dynamically based on:
 - inventory level
 - volatility
 - regime
 - toxicity
+- directional exposure
 
-Objective:
-- balance spread capture vs directional exposure under changing conditions.
+The objective is to balance spread capture against accumulated inventory and directional risk.
+
+### Cross-Market Hedging
+Cross-market hedging extends inventory management beyond individual markets by incorporating correlated instruments into exposure management. The objective is to reduce unwanted directional exposure while preserving the economics of passive liquidity provision.
+
+This allows inventory risk to be managed at the portfolio level rather than exclusively through quote skew or aggressive position reduction.
+
+#### Perpetual Futures Integration
+Perpetual futures serve two roles within the trading system:
+
+#### Microstructure alpha
+```
+Derivative order-book dynamics, trade flow, and spot-perpetual basis provide additional information for fair-value estimation.
+```
+
+#### Inventory hedging
+```
+Perpetual positions provide an additional execution venue for managing directional exposure accumulated through market making.
+```
+
+Hedging decisions account for:
+- hedge execution costs
+- funding rates
+- spot-perpetual basis
+- residual directional exposure
+
+This creates a two-way interaction between spot and derivative markets: perpetual order flow informs spot pricing decisions, while derivative positions provide a mechanism for transferring accumulated directional risk.
 
 ## Live Execution
 The system has progressed from simulation and Testnet execution to live capital deployment.
@@ -295,6 +345,8 @@ The live execution stack currently includes:
 - toxicity-aware participation and sizing
 - queue-aware cancel/replace logic
 - real-time trade-flow ingestion for state updates
+- cross-market hedge execution
+perpetual futures position and exposure management
 
 #### User Stream
 - handles WebSocket NEW / TRADE / CANCELED / REJECTED trades
@@ -457,7 +509,14 @@ Fees
 
 Inventory
     → whether repeated fills create unacceptable directional risk
+
+Cross-Market Hedging
+    → how directional exposure is transferred across correlated markets
+
+Cross-Market Alpha
+    → whether external market order flow contains incremental predictive information
 ```
+
 This decomposition is central to the architecture.
 
 ## Core Takeaway
@@ -467,7 +526,7 @@ predict the next price better.
 ```
 It is:
 ```
-decide when the expected value of providing liquidity exceeds the combined cost of adverse selection, queue risk, latency, fees, and inventory exposure.
+decide when the expected value of providing liquidity exceeds the combined cost of adverse selection, queue risk, latency, fees, hedging costs, and inventory exposure.
 ```
 
 Live deployment makes this distinction explicit.
