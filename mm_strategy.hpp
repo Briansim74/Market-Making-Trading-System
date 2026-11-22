@@ -712,7 +712,8 @@ public:
         double inv_usdt = signal.inventory * signal.mid; // USDT per PEPE
 
         // Inventory scale should be in USDT, not PEPE quantity.
-        double inv_scale_usdt = 1.0; // strongly reduce bid/ask size at 1usdt long/short to go to flat inv
+        // double inv_scale_usdt = 1.0; // strongly reduce bid/ask size at 1usdt long/short to go to flat inv, if want to hold more inv, increase to 10 for 10usdt inv
+        double inv_scale_usdt = 10.0;
         double inv_signal = tanh(inv_usdt / inv_scale_usdt);
 
         double bid_multiplier = exp(-inv_signal);
@@ -725,8 +726,6 @@ public:
 
         // Size is USDT notional.
         double size_usdt = config.markets[config.market].base_size * vol_penalty * risk_penalty * toxicity_penalty;
-
-        // if(size_usdt < 0.5 * config.markets[market].base_size) return {0.0, 0.0}; // risk guard to prevent toxic order size
 
         // Exchange minimum is 1 USDT.
         size_usdt = max(config.markets[config.market].base_size, min(size_usdt, 1.5 * config.markets[config.market].base_size)); // max 1.5 base size usdt per order

@@ -130,11 +130,7 @@ public:
     bool initialized = false;
 
     State(MarketConfig& config, std_string market) : config(config), market(market), market_book(config, market),
-    cash(config.markets[market].initial_cash), inventory(config.markets[market].initial_position)
-    {
-        // cash = config.markets[market].initial_cash;
-        // inventory = config.markets[market].initial_position;
-    }
+    cash(config.markets[market].initial_cash), inventory(config.markets[market].initial_position) {}
 
     double get_vol(){
         return sqrt(ewma_var);

@@ -263,7 +263,8 @@ public:
 
         // manifest
         ordered_json manifest = params;
-        std_string manifest_path = folder_path + "/manifest.json";
+        // std_string manifest_path = folder_path + "/manifest.json";
+        std_string manifest_path = folder_path + "/" + market + "_manifest.json";
         PerformanceMetrics performance = state.compute_performance();
 
         manifest["run_id"] = run_id;

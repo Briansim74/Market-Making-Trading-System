@@ -233,7 +233,7 @@ public:
     }
 
     void on_trade_event_spot(const Trade& trade){
-
+        cout << "spot trade event\n";
         spot_state.time = trade.local_ts;
         spot_state.last_trade = trade;
         spot_state.last_trade_ts = trade.ts;
@@ -241,10 +241,11 @@ public:
 
         spot_recorder.log_trade(trade);
         spot_execution.process_trade(trade);
+        cout << "spot trade event1\n";
     }
 
     void on_trade_event_perps(const Trade& trade){
-
+        cout << "perps trade event\n";
         perps_state.time = trade.local_ts;
         perps_state.last_trade = trade;
         perps_state.last_trade_ts = trade.ts;
@@ -252,9 +253,11 @@ public:
 
         perps_recorder.log_trade(trade);
         perps_execution.process_trade(trade);
+        cout << "perps trade event1\n";
     }
 
     void on_depth_event_spot(const Depth& depth){
+        cout << "spot depth event\n";
         // -------------------------
         // LIVE PROCESSING
         // -------------------------
@@ -317,9 +320,11 @@ public:
 
             spot_execution.place_quotes(hedge_signal);
         }
+        cout << "spot depth event1\n";
     }
 
     void on_depth_event_perps(const Depth& depth){
+        cout << "perps depth event\n";
         // -------------------------
         // LIVE PROCESSING
         // -------------------------
@@ -384,6 +389,7 @@ public:
 
             perps_execution.place_quotes(hedge_signal);
         }
+        cout << "perps depth event1\n";
     }
 
     void on_depth_event_spot_latency(const Depth& depth){
@@ -999,12 +1005,13 @@ public:
     vector<thread> threads;
 
     TradingSystem(const ordered_json& params) :
-        params(params), config(params), spot_state(config, "spot"), perps_state(config, (config.mode == "live") ? "perps" : "testnet_perps"),
+        params(params), config(params), spot_state(config, "spot"), perps_state(config, (config.mode != "testnet_perps") ? "perps" : "testnet_perps"),
         strategy(config), spot_recorder(config, spot_state, params, "spot"), perps_recorder(config, perps_state, params, "perps"),
         clock(config), dashboard_terminal(snapshot_store), dashboard_server(config, snapshot_store),
         signals(ioc, SIGINT, SIGTERM) {initialize();}
 
     void initialize(){
+        // EXECUTION, BROKER, STREAM, MARKPRICE
         if(config.mode == "live" && config.market == "spot"){
             spot_broker = make_unique<BinanceSpotBroker>(config, clock);
             spot_execution = make_unique<LiveExecution>(config, spot_state, spot_recorder, *spot_broker, clock, "spot");
@@ -1049,6 +1056,7 @@ public:
             if(config.hedge_enabled) spot_execution = make_unique<PaperExecution>(config, spot_state, spot_recorder, clock, "spot");
         }
 
+        // FEED
         if(config.exchange == "binance" && config.market == "spot" && config.mode != "replay"){
             spot_feed = make_unique<BinanceSpotFeed>(config, spot_state, execution_event, spot_recorder, clock);
 

@@ -233,6 +233,70 @@ public:
         return std_string(mdString);
     }
 
+    // ------------------------- NEW
+    // EXCHANGE ORDER STATE
+    // -------------------------
+    json get_open_orders(){
+
+        ostringstream q;
+        q << "symbol=" << config.markets["spot"].instrument_upper
+          << "&timestamp=" << clock.now_ms()
+          << "&recvWindow=5000";
+
+        string query = q.str();
+        string signature = sign(query);
+
+        string url = "/" + config.markets["spot"].endpoint + "/openOrders?" + query + "&signature=" + signature;
+        vector<string> headers = {"X-MBX-APIKEY: " + config.api_key};
+
+        auto res = http.request(http::verb::get, url, headers);
+        return json::parse(res);
+    }
+
+    // -------------------------
+    // INDIVIDUAL ORDER STATUS
+    // -------------------------
+    json get_order(const string& client_oid){
+
+        ostringstream q;
+        q << "symbol=" << config.markets["spot"].instrument_upper
+          << "&origClientOrderId=" << client_oid
+          << "&timestamp=" << clock.now_ms()
+          << "&recvWindow=5000";
+
+        string query = q.str();
+        string signature = sign(query);
+
+        string url = "/" + config.markets["spot"].endpoint + "/order?" + query + "&signature=" + signature;
+        vector<string> headers = {"X-MBX-APIKEY: " + config.api_key};
+
+        auto res = http.request(http::verb::get, url, headers);
+        return json::parse(res);
+    }
+
+    // -------------------------
+    // EXECUTION HISTORY
+    // -------------------------
+    json get_my_trades(const int64_t& start_time, const int64_t& end_time){
+
+        ostringstream q;
+        q << "symbol=" << config.markets["spot"].instrument_upper
+          << "&startTime=" << start_time
+          << "&endTime=" << end_time
+          << "&limit=1000"
+          << "&timestamp=" << clock.now_ms()
+          << "&recvWindow=5000";
+
+        string query = q.str();
+        string signature = sign(query);
+
+        string url = "/" + config.markets["spot"].endpoint + "/myTrades?" + query + "&signature=" + signature;
+        vector<string> headers = {"X-MBX-APIKEY: " + config.api_key};
+
+        auto res = http.request(http::verb::get, url, headers);
+        return json::parse(res);
+    }
+
     // -------------------------
     // ACCOUNT BALANCE
     // -------------------------

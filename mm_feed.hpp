@@ -420,8 +420,11 @@ public:
         while(running){
             boost::system::error_code ec;
             trade_ws->read(buffer, ec);
-            if(ec) break;
-
+            if(ec){
+                cout << "spot trade ec: " << ec << "\n";
+                break;
+            }
+            
             std_string msg = beast::buffers_to_string(buffer.data());
             buffer.consume(buffer.size());
 
@@ -478,7 +481,10 @@ public:
         while(running){
             boost::system::error_code ec;
             depth_ws->read(buffer, ec);
-            if(ec) break;
+            if(ec){
+                cout << "spot depth ec: " << ec << "\n";
+                break;
+            }
 
             std_string msg = beast::buffers_to_string(buffer.data());
             buffer.consume(buffer.size());
@@ -691,7 +697,10 @@ public:
         while(running){
             boost::system::error_code ec;
             trade_ws->read(buffer, ec);
-            if(ec) break;
+            if(ec){
+                cout << "perps feed ec: " << ec << "\n";
+                break;
+            }
 
             std_string msg = beast::buffers_to_string(buffer.data());
             buffer.consume(buffer.size());
@@ -749,7 +758,10 @@ public:
         while(running){
             boost::system::error_code ec;
             depth_ws->read(buffer, ec);
-            if(ec) break;
+            if(ec){
+                cout << "perps depth ec: " << ec << "\n";
+                break;
+            }
 
             std_string msg = beast::buffers_to_string(buffer.data());
             buffer.consume(buffer.size());
